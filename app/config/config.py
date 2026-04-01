@@ -30,12 +30,12 @@ class Settings:
             "CAMERA_DOC_ROOT",
             default=BASE_DIR / "content"
         )
-        self.CAMERA_MODBUS_PORT: str = self._get_str(
-            "CAMERA_MODBUS_PORT",
-            default="/dev/ttyUSB0"
-        )
         self.CAMERA_LOGS_DIR: Optional[Path] = self._get_path(
             "CAMERA_LOGS_DIR",
+            default=None
+        )
+        self.CAMERA_DEVICE_INDEX: Optional[Path] = self._get_path(
+            "CAMERA_DEVICE_INDEX",
             default=None
         )
 
