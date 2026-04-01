@@ -6,7 +6,6 @@
 # Drivers for the camera and OpenCV are included in the base image
 
 import time
-
 import cv2
 
 from app.config.config import settings
@@ -17,6 +16,19 @@ except ModuleNotFoundError:
     from queue import Queue
 
 import threading
+
+
+# GStreamer pipeline — используем nvarguscamerasrc для CSI-камеры
+pipeline = (
+    "nvarguscamerasrc sensor-id=0 sensor-mode=2 ! "
+    "video/x-raw(memory:NVMM), width=1280, height=720, "
+    "format=NV12, framerate=30/1 ! "
+    "nvvidconv ! "
+    "video/x-raw, format=BGRx ! "
+    "videoconvert ! "
+    "video/x-raw, format=BGR ! "
+    "appsink sync=false drop=true"
+)
 
 
 class FrameReader(threading.Thread):
@@ -32,9 +44,12 @@ class FrameReader(threading.Thread):
     def run(self):
         while self._running:
             ret, frame = self.camera.read()
+            if not ret:
+                continue
             while self.queues:
                 queue = self.queues.pop()
-                queue.put(frame)
+                if not queue.full():
+                    queue.put(frame)
 
     def addQueue(self, queue):
         self.queues.append(queue)
@@ -49,33 +64,36 @@ class FrameReader(threading.Thread):
 
 
 class Camera(object):
-    # frame_reader = None
     cap = None
 
     def __init__(self):
         self.open_camera()
 
     def open_camera(self):
-        self.cap = cv2.VideoCapture(settings.CAMERA_DEVICE_INDEX)
+        # Используем GStreamer-пайплайн
+        self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
         if not self.cap.isOpened():
-            raise RuntimeError("Failed to open camera!")
-
-        # if self.frame_reader == None:
-        #     self.frame_reader = FrameReader(self.cap, "")
-        #     self.frame_reader.daemon = True
-        #     self.frame_reader.start()
+            raise RuntimeError(
+                "Failed to open camera with GStreamer pipeline. "
+                "Check sensor-mode, camera connection, or nvargus-daemon."
+            )
 
     def getFrame(self):
-        return self.cap.read()
+        return self.cap.read()  # (ret, frame)
 
     def close(self):
-        # self.frame_reader.stop()
         self.cap.release()
 
 
 if __name__ == "__main__":
     camera = Camera()
-    camera.start_preview()
-    time.sleep(10)
-    camera.stop_preview()
+    print("Camera opened. Reading frames for 10 seconds...")
+    start_time = time.time()
+    while time.time() - start_time < 10:
+        ret, frame = camera.getFrame()
+        if ret:
+            print("✅ Кадр получен")
+            # Можно сохранить: cv2.imwrite("test_frame.jpg", frame)
+        time.sleep(0.1)
     camera.close()
+    print("Camera closed.")
