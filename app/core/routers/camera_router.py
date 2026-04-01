@@ -5,6 +5,8 @@ import threading
 from datetime import datetime
 import logging
 
+from app.config.config import settings
+
 router = APIRouter(prefix="/camera", tags=["camera"])
 
 # Настройка логирования
@@ -72,7 +74,7 @@ async def index_page(request: Request):
     # Рендерим шаблон
     from fastapi.templating import Jinja2Templates
 
-    templates = Jinja2Templates(directory="content")
+    templates = Jinja2Templates(directory=settings.CAMERA_DOC_ROOT)
     return templates.TemplateResponse(
         "index.html",
         {
