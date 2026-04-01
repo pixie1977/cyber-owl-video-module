@@ -34,9 +34,9 @@ class Settings:
             "CAMERA_LOGS_DIR",
             default=None
         )
-        self.CAMERA_DEVICE_INDEX: Optional[Path] = self._get_path(
+        self.CAMERA_DEVICE_INDEX: int = self._get_int(
             "CAMERA_DEVICE_INDEX",
-            default=None
+            default=0
         )
 
         # Валидация уровня логирования
