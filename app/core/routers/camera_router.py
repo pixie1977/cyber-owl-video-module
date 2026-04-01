@@ -20,7 +20,7 @@ cap = None
 def get_camera():
     global cap
     if cap is None or not cap.isOpened():
-        cap = cv2.VideoCapture(settings.CAMERA_DEVICE_INDEX)
+        cap = cv2.VideoCapture(int(settings.CAMERA_DEVICE_INDEX))
         if not cap.isOpened():
             logger.error(f"Cannot open camera at index {settings.CAMERA_DEVICE_INDEX}")
             raise RuntimeError(f"Cannot open camera at index {settings.CAMERA_DEVICE_INDEX}")
