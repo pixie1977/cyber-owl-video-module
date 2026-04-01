@@ -20,10 +20,25 @@ cap = None
 def get_camera():
     global cap
     if cap is None or not cap.isOpened():
-        cap = cv2.VideoCapture(int(settings.CAMERA_DEVICE_INDEX))
+        # Попробуем использовать GStreamer pipeline для лучшей совместимости с Jetson
+        pipeline = (
+            "nvarguscamerasrc sensor-id=0 ! "
+            "video/x-raw(memory:NVMM), width=1280, height=720, "
+            "format=NV12, framerate=30/1 ! "
+            "nvvidconv ! "
+            "video/x-raw, format=BGRx ! "
+            "videoconvert ! "
+            "video/x-raw, format=BGR ! "
+            "appsink"
+        )
+        cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
         if not cap.isOpened():
-            logger.error(f"Cannot open camera at index {settings.CAMERA_DEVICE_INDEX}")
-            raise RuntimeError(f"Cannot open camera at index {settings.CAMERA_DEVICE_INDEX}")
+            logger.error("Cannot open camera with GStreamer pipeline")
+            # Резервный вариант - прямое подключение
+            cap = cv2.VideoCapture(int(settings.CAMERA_DEVICE_INDEX))
+            if not cap.isOpened():
+                logger.error(f"Cannot open camera at index {settings.CAMERA_DEVICE_INDEX}")
+                raise RuntimeError(f"Cannot open camera at index {settings.CAMERA_DEVICE_INDEX}")
     return cap
 
 
