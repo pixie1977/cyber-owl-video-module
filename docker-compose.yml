@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  camera-server:
+    build: .
+    volumes:
+      - ./app/content:/app/app/content:ro
+    env_file:
+      - .env
+    ipc: host
+    security_opt:
+      - label:disable
+    ports:
+      - "${CAMERA_PORT}:${CAMERA_PORT}"
+    restart: unless-stopped

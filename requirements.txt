@@ -1,0 +1,16 @@
+fastapi==0.129.0
+fuzzywuzzy==0.18.0
+omegaconf==2.3.0
+pydantic==2.12.5
+pygame==2.6.1
+python-dotenv==1.2.1
+setuptools==80.3.1
+sounddevice==0.5.2
+torch==2.7.1
+uvicorn==0.39.0
+numpy==1.23.5
+python-Levenshtein
+python-multipart
+scipy
+pymodbus==3.8.0
+opencv-python-headless>=4.5.5.64
