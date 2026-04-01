@@ -15,10 +15,16 @@ logger = logging.getLogger(__name__)
 
 # Глобальные переменные
 lock = threading.Lock()
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    logger.error("Cannot open camera")
-    raise RuntimeError("Cannot open camera")
+cap = None
+
+def get_camera():
+    global cap
+    if cap is None or not cap.isOpened():
+        cap = cv2.VideoCapture(settings.CAMERA_DEVICE_INDEX)
+        if not cap.isOpened():
+            logger.error(f"Cannot open camera at index {settings.CAMERA_DEVICE_INDEX}")
+            raise RuntimeError(f"Cannot open camera at index {settings.CAMERA_DEVICE_INDEX}")
+    return cap
 
 
 def get_frame():
@@ -26,9 +32,13 @@ def get_frame():
     Захватывает один кадр с камеры, добавляет метку времени и кодирует в JPEG.
     """
     with lock:
-        ret, img = cap.read()
+        camera = get_camera()
+        ret, img = camera.read()
         if not ret:
             logger.warning("Failed to read frame from camera")
+            # Попробуем пересоздать соединение с камерой
+            cap.release()
+            cap = None
             return None
 
         # Добавляем метку времени
