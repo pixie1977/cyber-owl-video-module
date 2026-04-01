@@ -31,13 +31,14 @@ def get_frame():
     """
     Захватывает один кадр с камеры, добавляет метку времени и кодирует в JPEG.
     """
+    global cap
     with lock:
         camera = get_camera()
         ret, img = camera.read()
         if not ret:
             logger.warning("Failed to read frame from camera")
             # Попробуем пересоздать соединение с камерой
-            if 'cap' in globals() and cap is not None:
+            if cap is not None:
                 cap.release()
             cap = None
             return None
