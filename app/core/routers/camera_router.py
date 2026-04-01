@@ -37,7 +37,8 @@ def get_frame():
         if not ret:
             logger.warning("Failed to read frame from camera")
             # Попробуем пересоздать соединение с камерой
-            cap.release()
+            if 'cap' in globals() and cap is not None:
+                cap.release()
             cap = None
             return None
 
