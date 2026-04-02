@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Request
 from starlette.responses import StreamingResponse
-import cv2
 import threading
 from datetime import datetime
 import logging
+import cv2
+import numpy as np
 
 from app.config.config import settings
 
@@ -16,66 +17,85 @@ logger = logging.getLogger(__name__)
 # Глобальные переменные
 lock = threading.Lock()
 cap = None
+camera = None  # для jetson.utils.gstCamera
+cuda_img = None
 
-if cv2.CAP_GSTREAMER not in [attr for attr in dir(cv2) if attr.startswith("CAP_")]:
-    logger.warning("OpenCV not compiled with GStreamer support!")
+# Попытка импорта jetson.utils
+try:
+    import jetson.utils
+    JETSON_CAMERA_AVAILABLE = True
+    logger.info("✅ jetson.utils успешно импортирован")
+except ImportError as e:
+    JETSON_CAMERA_AVAILABLE = False
+    logger.warning(f"❌ Не удалось импортировать jetson.utils: {e}. Используем OpenCV.")
 
-def get_camera():
+def get_jetson_camera():
+    global camera
+    if camera is None and JETSON_CAMERA_AVAILABLE:
+        try:
+            camera = jetson.utils.gstCamera(
+                width=1280,
+                height=720,
+                sensor_id=int(settings.CAMERA_DEVICE_INDEX)
+            )
+            camera.Open()
+            logger.info(f"📹 Камера Jetson инициализирована: {camera.GetWidth()}x{camera.GetHeight()}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка инициализации камеры через jetson.utils: {e}")
+            raise RuntimeError("Не удалось подключиться к камере") from e
+    return camera
+
+def get_opencv_camera():
     global cap
     if cap is None or not cap.isOpened():
-        # Используем прямое подключение к камере через OpenCV
         cap = cv2.VideoCapture(int(settings.CAMERA_DEVICE_INDEX))
         if not cap.isOpened():
-            logger.error(f"Cannot open camera at index {settings.CAMERA_DEVICE_INDEX}")
-            raise RuntimeError(f"Cannot open camera at index {settings.CAMERA_DEVICE_INDEX}")
-        
-        # Настройка параметров камеры
+            logger.error("❌ Не удалось открыть камеру через OpenCV")
+            raise RuntimeError("Не удалось открыть камеру")
+
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         cap.set(cv2.CAP_PROP_FPS, 30)
-        
+        logger.info("📹 Используем OpenCV для захвата видео")
     return cap
 
-
 def get_frame():
-    """
-    Захватывает один кадр с камеры, добавляет метку времени и кодирует в JPEG.
-    """
-    global cap
+    global cuda_img
     with lock:
-        camera = get_camera()
-        ret, img = camera.read()
-        if not ret:
-            logger.warning("Failed to read frame from camera")
-            # Попробуем пересоздать соединение с камерой
-            if cap is not None:
-                cap.release()
-            cap = None
+        try:
+            if JETSON_CAMERA_AVAILABLE:
+                cam = get_jetson_camera()
+                cuda_img, w, h = cam.CaptureRGBA(zeroCopy=True)
+                img = jetson.utils.cudaToNumpy(cuda_img)
+                img = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGBA2BGR)
+            else:
+                cap = get_opencv_camera()
+                ret, img = cap.read()
+                if not ret:
+                    logger.warning("⚠️ Не удалось получить кадр через OpenCV")
+                    return None
+        except Exception as e:
+            logger.error(f"📷 Ошибка захвата кадра: {e}")
             return None
 
         # Добавляем метку времени
         font = cv2.FONT_HERSHEY_SIMPLEX
         timestamp = str(datetime.now().time())
-        cv2.putText(img, timestamp, (10, 50), font, 2, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(img, timestamp, (10, 50), font, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
 
-        # Кодируем изображение в JPEG
+        # Кодируем в JPEG
         ret, jpg = cv2.imencode(".jpg", img)
         if not ret:
-            logger.warning("Failed to encode image")
+            logger.warning("⚠️ Не удалось закодировать изображение")
             return None
 
         return bytes(jpg)
 
-
 def generate_video_stream():
-    """
-    Генерирует поток видеокадров в формате multipart/x-mixed-replace.
-    """
     while True:
         frame = get_frame()
         if frame is None:
             continue
-
         yield (
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n"
@@ -83,35 +103,21 @@ def generate_video_stream():
             + b"\r\n"
         )
 
-
 @router.get("/")
 async def index_page(request: Request):
-    """
-    Возвращает HTML-страницу с видеопотоком.
-    """
-    # Получаем IP клиента
-    client_host = request.client.host
-    port = request.url.port or 80
-
-    # Рендерим шаблон
     from fastapi.templating import Jinja2Templates
-
     templates = Jinja2Templates(directory=settings.CAMERA_DOC_ROOT)
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
-            "ip": client_host,
-            "port": port
+            "ip": request.client.host,
+            "port": request.url.port or 80
         }
     )
 
-
 @router.get("/video_feed")
 async def video_feed():
-    """
-    Возвращает видеопоток в формате MJPEG.
-    """
     return StreamingResponse(
         generate_video_stream(),
         media_type="multipart/x-mixed-replace;boundary=frame"
