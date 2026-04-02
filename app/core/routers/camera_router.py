@@ -40,9 +40,8 @@ def get_opencv_camera():
     return cap
 
 def get_frame():
-    global cuda_img
     with lock:
-            try:
+        try:
             cap = get_opencv_camera()
             ret, img = cap.read()
             if not ret:
