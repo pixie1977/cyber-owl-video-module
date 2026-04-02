@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 lock = threading.Lock()
 cap = None
 
+if cv2.CAP_GSTREAMER not in [attr for attr in dir(cv2) if attr.startswith("CAP_")]:
+    logger.warning("OpenCV not compiled with GStreamer support!")
+
 def get_camera():
     global cap
     if cap is None or not cap.isOpened():
