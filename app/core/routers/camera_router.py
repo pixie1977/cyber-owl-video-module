@@ -28,14 +28,34 @@ JETSON_CAMERA_AVAILABLE = False
 def get_opencv_camera():
     global cap
     if cap is None or not cap.isOpened():
-        cap = cv2.VideoCapture(int(settings.CAMERA_DEVICE_INDEX))
-        if not cap.isOpened():
-            logger.error("❌ Не удалось открыть камеру через OpenCV")
+        # Пробуем разные backend'и для OpenCV
+        backends = [cv2.CAP_V4L2, cv2.CAP_ANY]
+        
+        for backend in backends:
+            cap = cv2.VideoCapture(int(settings.CAMERA_DEVICE_INDEX), backend)
+            if cap.isOpened():
+                logger.info(f"📹 Камера открыта с backend'ом {backend}")
+                break
+            cap.release()
+            cap = None
+            
+        if cap is None or not cap.isOpened():
+            logger.error("❌ Не удалось открыть камеру через OpenCV с любым backend'ом")
             raise RuntimeError("Не удалось открыть камеру")
 
+        # Устанавливаем параметры камеры
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         cap.set(cv2.CAP_PROP_FPS, 30)
+        
+        # Добавляем небольшую задержку для инициализации камеры
+        import time
+        time.sleep(1)
+        
+        # Пробуем сделать несколько пробных кадров
+        for i in range(5):
+            cap.read()
+            
         logger.info("📹 Используем OpenCV для захвата видео")
     return cap
 
@@ -51,6 +71,11 @@ def get_frame():
             logger.error(f"📷 Ошибка захвата кадра: {e}")
             return None
 
+        # Проверяем, что изображение не пустое и не заполнено одним цветом
+        if img is None or np.all(img == img[0,0]):
+            logger.warning("⚠️ Получено изображение заполненное одним цветом")
+            return None
+            
         # Добавляем метку времени
         font = cv2.FONT_HERSHEY_SIMPLEX
         timestamp = str(datetime.now().time())
