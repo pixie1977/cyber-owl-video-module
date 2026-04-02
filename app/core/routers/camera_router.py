@@ -21,29 +21,9 @@ camera = None  # для jetson.utils.gstCamera
 cuda_img = None
 
 # Попытка импорта jetson.utils
-try:
-    import jetson_utils
-    JETSON_CAMERA_AVAILABLE = True
-    logger.info("✅ jetson_utils успешно импортирован")
-except ImportError as e:
-    JETSON_CAMERA_AVAILABLE = False
-    logger.warning(f"❌ Не удалось импортировать jetson.utils: {e}. Используем OpenCV.")
+JETSON_CAMERA_AVAILABLE = False
 
-def get_jetson_camera():
-    global camera
-    if camera is None and JETSON_CAMERA_AVAILABLE:
-        try:
-            camera = jetson_utils.gstCamera(
-                width=1280,
-                height=720,
-                sensor_id=int(settings.CAMERA_DEVICE_INDEX)
-            )
-            camera.Open()
-            logger.info(f"📹 Камера Jetson инициализирована: {camera.GetWidth()}x{camera.GetHeight()}")
-        except Exception as e:
-            logger.error(f"❌ Ошибка инициализации камеры через jetson.utils: {e}")
-            raise RuntimeError("Не удалось подключиться к камере") from e
-    return camera
+
 
 def get_opencv_camera():
     global cap
@@ -62,18 +42,12 @@ def get_opencv_camera():
 def get_frame():
     global cuda_img
     with lock:
-        try:
-            if JETSON_CAMERA_AVAILABLE:
-                cam = get_jetson_camera()
-                cuda_img, w, h = cam.CaptureRGBA(zeroCopy=True)
-                img = jetson_utils.cudaToNumpy(cuda_img)
-                img = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGBA2BGR)
-            else:
-                cap = get_opencv_camera()
-                ret, img = cap.read()
-                if not ret:
-                    logger.warning("⚠️ Не удалось получить кадр через OpenCV")
-                    return None
+            try:
+            cap = get_opencv_camera()
+            ret, img = cap.read()
+            if not ret:
+                logger.warning("⚠️ Не удалось получить кадр через OpenCV")
+                return None
         except Exception as e:
             logger.error(f"📷 Ошибка захвата кадра: {e}")
             return None
