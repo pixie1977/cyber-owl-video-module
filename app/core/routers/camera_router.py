@@ -22,9 +22,9 @@ cuda_img = None
 
 # Попытка импорта jetson.utils
 try:
-    import jetson.utils
+    import jetson_utils
     JETSON_CAMERA_AVAILABLE = True
-    logger.info("✅ jetson.utils успешно импортирован")
+    logger.info("✅ jetson_utils успешно импортирован")
 except ImportError as e:
     JETSON_CAMERA_AVAILABLE = False
     logger.warning(f"❌ Не удалось импортировать jetson.utils: {e}. Используем OpenCV.")
@@ -33,7 +33,7 @@ def get_jetson_camera():
     global camera
     if camera is None and JETSON_CAMERA_AVAILABLE:
         try:
-            camera = jetson.utils.gstCamera(
+            camera = jetson_utils.gstCamera(
                 width=1280,
                 height=720,
                 sensor_id=int(settings.CAMERA_DEVICE_INDEX)
@@ -66,7 +66,7 @@ def get_frame():
             if JETSON_CAMERA_AVAILABLE:
                 cam = get_jetson_camera()
                 cuda_img, w, h = cam.CaptureRGBA(zeroCopy=True)
-                img = jetson.utils.cudaToNumpy(cuda_img)
+                img = jetson_utils.cudaToNumpy(cuda_img)
                 img = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGBA2BGR)
             else:
                 cap = get_opencv_camera()
