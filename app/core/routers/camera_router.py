@@ -50,8 +50,8 @@ def get_frame():
             logger.warning("⚠️ Получено подозрительное изображение (возможно, шум или ошибка)")
             return None
 
-        # Кодируем в JPEG
-        ret, jpg = cv2.imencode(".jpg", img)
+        # Кодируем в JPEG с качеством 80 для баланса качества и производительности
+        ret, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
         if not ret:
             logger.warning("⚠️ Не удалось закодировать изображение")
             return None
