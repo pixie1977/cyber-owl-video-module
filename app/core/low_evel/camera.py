@@ -29,42 +29,54 @@ def gstreamer_pipeline():
 
 
 class FrameReader(threading.Thread):
-    queues = []
-    _running = True
-    camera = None
-
     def __init__(self, camera, name):
         threading.Thread.__init__(self)
         self.name = name
         self.camera = camera
+        self.queue = Queue(1)
+        self._running = True
+        self.start()
 
     def run(self):
         while self._running:
             ret, frame = self.camera.read()
-            if not ret:
-                continue
-            while self.queues:
-                queue = self.queues.pop()
-                if not queue.full():
-                    queue.put(frame)
-
-    def addQueue(self, queue):
-        self.queues.append(queue)
+            if ret and frame is not None:
+                if not self.queue.full():
+                    self.queue.put(frame)
+            time.sleep(0.01)  # Небольшая задержка для снижения нагрузки на CPU
 
     def getFrame(self, timeout=None):
-        queue = Queue(1)
-        self.addQueue(queue)
-        return queue.get(timeout=timeout)
+        return self.queue.get(timeout=timeout)
 
     def stop(self):
         self._running = False
+        self.queue.queue.clear()  # Очищаем очередь при остановке
 
 
 class Camera(object):
     cap = None
 
     def __init__(self):
+        self.cap = None
+        self.frame_reader = None
         self.open_camera()
+        
+    def open_camera(self):
+        # Останавливаем предыдущий поток, если он существует
+        if self.frame_reader is not None:
+            self.frame_reader.stop()
+            self.frame_reader.join(timeout=1)
+        
+        # Используем GStreamer-пайплайн
+        self.cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
+        if not self.cap.isOpened():
+            raise RuntimeError(
+                "Failed to open camera with GStreamer pipeline. "
+                "Check sensor-mode, camera connection, or nvargus-daemon."
+            )
+        
+        # Создаем и запускаем поток для чтения кадров
+        self.frame_reader = FrameReader(self.cap, "frame_reader")
 
     def open_camera(self):
         # Используем GStreamer-пайплайн
@@ -76,7 +88,14 @@ class Camera(object):
             )
 
     def getFrame(self):
-        return self.cap.read()  # (ret, frame)
+        if self.frame_reader and self.frame_reader.is_alive():
+            try:
+                frame = self.frame_reader.getFrame(timeout=2.0)
+                return (True, frame) if frame is not None else (False, None)
+            except Exception as e:
+                print(f"Frame reader error: {e}")
+                return (False, None)
+        return (False, None)
 
     def close(self):
         self.cap.release()
