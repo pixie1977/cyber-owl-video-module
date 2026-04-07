@@ -41,9 +41,11 @@ class FrameReader(threading.Thread):
     def run(self):
         while self._running:
             ret, frame = self.camera.getFrame()
+            print("Получили фрейм")
             if ret and frame is not None:
                 if not self.queue.full():
                     self.queue.put(frame)
+                    print("фреймы в очереди")
             time.sleep(0.01)  # Небольшая задержка для снижения нагрузки на CPU
 
     def getFrame(self, timeout=None):
