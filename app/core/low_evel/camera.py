@@ -39,7 +39,7 @@ class FrameReader(threading.Thread):
 
     def run(self):
         while self._running:
-            ret, frame = self.camera.read()
+            ret, frame = self.camera.getFrame()
             if ret and frame is not None:
                 if not self.queue.full():
                     self.queue.put(frame)
