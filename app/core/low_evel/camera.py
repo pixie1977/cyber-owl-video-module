@@ -35,6 +35,7 @@ class FrameReader(threading.Thread):
         self.camera = camera
         self.queue = Queue(1)
         self._running = True
+        self.daemon = True
         self.start()
 
     def run(self):
