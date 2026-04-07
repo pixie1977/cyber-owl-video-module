@@ -20,7 +20,7 @@ lock = threading.Lock()
 cap = None
 camera = Camera()  # для jetson.utils.gstCamera
 frame_reader = FrameReader(camera, "nv")
-frame_reader.daemon(True)
+frame_reader.daemon = True
 frame_reader.start()
 cuda_img = None
 
