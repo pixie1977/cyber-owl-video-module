@@ -19,16 +19,13 @@ import threading
 
 
 # GStreamer pipeline — используем nvarguscamerasrc для CSI-камеры
-pipeline = (
-    "nvarguscamerasrc sensor-id=0 sensor-mode=2 ! "
-    "video/x-raw(memory:NVMM), width=1280, height=720, "
-    "format=NV12, framerate=30/1 ! "
-    "nvvidconv ! "
-    "video/x-raw, format=BGRx ! "
-    "videoconvert ! "
-    "video/x-raw, format=BGR ! "
-    "appsink sync=false drop=true"
-)
+def gstreamer_pipeline():
+    return (
+        "nvarguscamerasrc sensor-id=0 ! "
+        "video/x-raw(memory:NVMM), width=1280, height=720, format=NV12, framerate=60/1 ! "
+        "nvvideoconvert ! video/x-raw, format=BGRx ! "
+        "videoconvert ! video/x-raw, format=BGR ! appsink"
+    )
 
 
 class FrameReader(threading.Thread):
@@ -71,7 +68,7 @@ class Camera(object):
 
     def open_camera(self):
         # Используем GStreamer-пайплайн
-        self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+        self.cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
         if not self.cap.isOpened():
             raise RuntimeError(
                 "Failed to open camera with GStreamer pipeline. "

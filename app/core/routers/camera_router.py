@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request
 from starlette.responses import StreamingResponse
+from app.core.low_evel.camera import Camera
 import threading
 from datetime import datetime
 import logging
@@ -17,54 +18,17 @@ logger = logging.getLogger(__name__)
 # Глобальные переменные
 lock = threading.Lock()
 cap = None
-camera = None  # для jetson.utils.gstCamera
+camera = Camera()  # для jetson.utils.gstCamera
 cuda_img = None
 
 # Попытка импорта jetson.utils
 JETSON_CAMERA_AVAILABLE = False
 
-
-
-def get_opencv_camera():
-    global cap
-    if cap is None or not cap.isOpened():
-        # Пробуем разные backend'и для OpenCV
-        backends = [cv2.CAP_V4L2, cv2.CAP_ANY]
-        
-        for backend in backends:
-            cap = cv2.VideoCapture(int(settings.CAMERA_DEVICE_INDEX), backend)
-            if cap.isOpened():
-                logger.info(f"📹 Камера открыта с backend'ом {backend}")
-                break
-            cap.release()
-            cap = None
-            
-        if cap is None or not cap.isOpened():
-            logger.error("❌ Не удалось открыть камеру через OpenCV с любым backend'ом")
-            raise RuntimeError("Не удалось открыть камеру")
-
-        # Устанавливаем параметры камеры
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        cap.set(cv2.CAP_PROP_FPS, 30)
-        
-        # Добавляем небольшую задержку для инициализации камеры
-        import time
-        time.sleep(1)
-        
-        # Пробуем сделать несколько пробных кадров
-        for i in range(5):
-            cap.read()
-            
-        logger.info("📹 Используем OpenCV для захвата видео")
-    return cap
-
 def get_frame():
     with lock:
         try:
-            cap = get_opencv_camera()
-            ret, img = cap.read()
-            if not ret:
+            img = camera.getFrame()
+            if not img:
                 logger.warning("⚠️ Не удалось получить кадр через OpenCV")
                 return None
         except Exception as e:
@@ -72,14 +36,19 @@ def get_frame():
             return None
 
         # Проверяем, что изображение не пустое и не заполнено одним цветом
-        if img is None or np.all(img == img[0,0]):
-            logger.warning("⚠️ Получено изображение заполненное одним цветом")
+        if img is None or img.size == 0 or np.all(img == img[0,0]):
+            logger.warning("⚠️ Получено изображение заполненное одним цветом или пустое")
             return None
             
         # Добавляем метку времени
         font = cv2.FONT_HERSHEY_SIMPLEX
         timestamp = str(datetime.now().time())
         cv2.putText(img, timestamp, (10, 50), font, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
+        
+        # Дополнительная проверка: если среднее значение пикселей слишком высокое (например, все зеленое), пропускаем кадр
+        if np.mean(img) > 200 and np.std(img) < 50:  # Высокое среднее и низкое стандартное отклонение
+            logger.warning("⚠️ Получено подозрительное изображение (возможно, шум или ошибка)")
+            return None
 
         # Кодируем в JPEG
         ret, jpg = cv2.imencode(".jpg", img)
