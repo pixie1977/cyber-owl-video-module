@@ -27,8 +27,8 @@ JETSON_CAMERA_AVAILABLE = False
 def get_frame():
     with lock:
         try:
-            img = camera.getFrame()
-            if not img:
+            ret, img = camera.getFrame()
+            if not ret or img is None:
                 logger.warning("⚠️ Не удалось получить кадр через OpenCV")
                 return None
         except Exception as e:
@@ -36,7 +36,7 @@ def get_frame():
             return None
 
         # Проверяем, что изображение не пустое и не заполнено одним цветом
-        if img is None or img.size == 0 or np.all(img == img[0,0]):
+        if img is None or img.size == 0 or (img.ndim >= 2 and np.all(img == img[0,0])):
             logger.warning("⚠️ Получено изображение заполненное одним цветом или пустое")
             return None
             
