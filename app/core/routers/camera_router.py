@@ -25,38 +25,38 @@ cuda_img = None
 JETSON_CAMERA_AVAILABLE = False
 
 def get_frame():
-    with lock:
-        try:
-            ret, img = camera.getFrame()
-            if not ret or img is None:
-                logger.warning("⚠️ Не удалось получить кадр через OpenCV")
-                return None
-        except Exception as e:
-            logger.error(f"📷 Ошибка захвата кадра: {e}")
+    # with lock:
+    try:
+        ret, img = camera.getFrame()
+        if not ret or img is None:
+            logger.warning("⚠️ Не удалось получить кадр через OpenCV")
             return None
+    except Exception as e:
+        logger.error(f"📷 Ошибка захвата кадра: {e}")
+        return None
 
-        # Проверяем, что изображение не пустое и не заполнено одним цветом
-        if img is None or img.size == 0 or (img.ndim >= 2 and np.all(img == img[0,0])):
-            logger.warning("⚠️ Получено изображение заполненное одним цветом или пустое")
-            return None
-            
-        # Добавляем метку времени
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        timestamp = str(datetime.now().time())
-        cv2.putText(img, timestamp, (10, 50), font, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
-        
-        # Дополнительная проверка: если среднее значение пикселей слишком высокое (например, все зеленое), пропускаем кадр
-        if np.mean(img) > 200 and np.std(img) < 50:  # Высокое среднее и низкое стандартное отклонение
-            logger.warning("⚠️ Получено подозрительное изображение (возможно, шум или ошибка)")
-            return None
+    # Проверяем, что изображение не пустое и не заполнено одним цветом
+    if img is None or img.size == 0 or (img.ndim >= 2 and np.all(img == img[0,0])):
+        logger.warning("⚠️ Получено изображение заполненное одним цветом или пустое")
+        return None
 
-        # Кодируем в JPEG с качеством 80 для баланса качества и производительности
-        ret, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        if not ret:
-            logger.warning("⚠️ Не удалось закодировать изображение")
-            return None
+    # Добавляем метку времени
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    timestamp = str(datetime.now().time())
+    cv2.putText(img, timestamp, (10, 50), font, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
 
-        return bytes(jpg)
+    # Дополнительная проверка: если среднее значение пикселей слишком высокое (например, все зеленое), пропускаем кадр
+    if np.mean(img) > 200 and np.std(img) < 50:  # Высокое среднее и низкое стандартное отклонение
+        logger.warning("⚠️ Получено подозрительное изображение (возможно, шум или ошибка)")
+        return None
+
+    # Кодируем в JPEG с качеством 80 для баланса качества и производительности
+    ret, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    if not ret:
+        logger.warning("⚠️ Не удалось закодировать изображение")
+        return None
+
+    return bytes(jpg)
 
 def generate_video_stream():
     while True:
