@@ -3,7 +3,6 @@
 # See license
 # Using a CSI camera (such as the Raspberry Pi Version 2) connected to a
 # NVIDIA Jetson Nano Developer Kit using OpenCV
-# Drivers for the camera and OpenCV are included in the base image
 
 import time
 import cv2
@@ -18,7 +17,6 @@ except ModuleNotFoundError:
 import threading
 
 
-# GStreamer pipeline — используем nvarguscamerasrc для CSI-камеры
 def gstreamer_pipeline():
     return (
         "nvarguscamerasrc sensor-id=0 ! "
@@ -29,85 +27,86 @@ def gstreamer_pipeline():
 
 
 class FrameReader(threading.Thread):
-    def __init__(self, camera, name):
-        threading.Thread.__init__(self)
+    def __init__(self, cap, name="frame_reader"):
+        super().__init__()
         self.name = name
-        self.camera = camera
-        self.queue = Queue(1)
+        self.cap = cap
+        self.queue = Queue(maxsize=1)
         self._running = True
         self.daemon = True
         self.start()
 
     def run(self):
         while self._running:
-            ret, frame = self.camera.getFrame()
-            print("Получили фрейм")
+            ret, frame = self.cap.read()
             if ret and frame is not None:
                 if not self.queue.full():
-                    self.queue.put(frame)
-                    print("фреймы в очереди")
-            time.sleep(0.01)  # Небольшая задержка для снижения нагрузки на CPU
+                    try:
+                        self.queue.put_nowait(frame)
+                    except Queue.Full:
+                        pass  # Пропускаем, если очередь полна — это нормально при высокой нагрузке
+            else:
+                print("⚠️ Не удалось получить кадр из камеры")
+                time.sleep(0.01)
+        # Освобождаем камеру при завершении потока
+        self.cap.release()
 
-    def getFrame(self, timeout=None):
-        return self.queue.get(timeout=timeout)
+    def getFrame(self, timeout=0.1):  # Сократили таймаут
+        try:
+            return self.queue.get_nowait()  # Попробуем без блокировки
+        except Queue.Empty:
+            pass
+        try:
+            return self.queue.get(timeout=timeout)
+        except Queue.Empty:
+            return None
+        except Exception as e:
+            print(f"Ошибка получения кадра: {e}")
+            return None
 
     def stop(self):
         self._running = False
-        self.queue.queue.clear()  # Очищаем очередь при остановке
+        self.queue.queue.clear()
 
 
-class Camera(object):
-    cap = None
-
+class Camera:
     def __init__(self):
         self.cap = None
         self.frame_reader = None
         self.open_camera()
-        
+
     def open_camera(self):
         # Останавливаем предыдущий поток, если он существует
         if self.frame_reader is not None:
             self.frame_reader.stop()
             self.frame_reader.join(timeout=1)
-        
-        # Используем GStreamer-пайплайн
-        self.cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
-        if not self.cap.isOpened():
-            raise RuntimeError(
-                "Failed to open camera with GStreamer pipeline. "
-                "Check sensor-mode, camera connection, or nvargus-daemon."
-            )
-        
-        # Создаем и запускаем поток для чтения кадров
-        self.frame_reader = FrameReader(self.cap, "frame_reader")
-        
-        # Даем потоку немного времени на инициализацию
-        import time
-        time.sleep(0.5)
 
-    def open_camera(self):
-        # Используем GStreamer-пайплайн
+        # Открываем камеру с GStreamer
         self.cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
         if not self.cap.isOpened():
             raise RuntimeError(
                 "Failed to open camera with GStreamer pipeline. "
-                "Check sensor-mode, camera connection, or nvargus-daemon."
+                "Check sensor-id, camera connection, or nvargus-daemon."
             )
+
+        # Создаём новый FrameReader
+        self.frame_reader = FrameReader(self.cap)
 
     def getFrame(self):
-        time.sleep(0.04)
-        # Используем frame_reader если он доступен
-        try:
-            frame = self.frame_reader.getFrame(timeout=2.0)
-            return (True, frame) if frame is not None else (False, None)
-        except Exception as e:
-            print(f"Frame reader error: {e}")
-            # При ошибке frame_reader пробуем прямое чтение
-            ret, frame = self.cap.read()
-            return (True, frame) if ret and frame is not None else (False, None)
+        # Убрали sleep — не нужно искусственно замедлять
+        frame = self.frame_reader.getFrame(timeout=0.5)  # 500ms максимум ждём
+        if frame is not None:
+            return True, frame.copy()  # Возвращаем копию, чтобы избежать проблем с памятью
+        else:
+            return False, None
 
     def close(self):
-        self.cap.release()
+        if self.frame_reader is not None:
+            self.frame_reader.stop()
+            self.frame_reader.join(timeout=1)
+        if self.cap is not None and self.cap.isOpened():
+            self.cap.release()
+        print("Camera closed.")
 
 
 if __name__ == "__main__":
@@ -118,7 +117,8 @@ if __name__ == "__main__":
         ret, frame = camera.getFrame()
         if ret:
             print("✅ Кадр получен")
-            # Можно сохранить: cv2.imwrite("test_frame.jpg", frame)
+            # cv2.imwrite("test_frame.jpg", frame)  # При необходимости сохранить
+        else:
+            print("❌ Нет кадра")
         time.sleep(0.1)
     camera.close()
-    print("Camera closed.")
