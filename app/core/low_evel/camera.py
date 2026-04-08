@@ -40,8 +40,8 @@ class FrameReader(threading.Thread):
 
     def run(self):
         while self._running:
-            ret, frame = self.camera.rea()
-            print(f"Получили фрейм ret={ret} frame={frame}")
+            ret, frame = self.camera.getFrame()
+            print("Получили фрейм")
             if ret and frame is not None:
                 if not self.queue.full():
                     self.queue.put(frame)
@@ -57,10 +57,10 @@ class FrameReader(threading.Thread):
 
 
 class Camera(object):
-    cv2cap = None
+    cap = None
 
     def __init__(self):
-        self.cv2cap = None
+        self.cap = None
         self.frame_reader = None
         self.open_camera()
         
@@ -71,20 +71,20 @@ class Camera(object):
             self.frame_reader.join(timeout=1)
         
         # Используем GStreamer-пайплайн
-        self.cv2cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
-        if not self.cv2cap.isOpened():
+        self.cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
+        if not self.cap.isOpened():
             raise RuntimeError(
                 "Failed to open camera with GStreamer pipeline. "
                 "Check sensor-mode, camera connection, or nvargus-daemon."
             )
         
         # Создаем и запускаем поток для чтения кадров
-        self.frame_reader = FrameReader(self.cv2cap, "frame_reader")
+        self.frame_reader = FrameReader(self.cap, "frame_reader")
 
     def open_camera(self):
         # Используем GStreamer-пайплайн
-        self.cv2cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
-        if not self.cv2cap.isOpened():
+        self.cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
+        if not self.cap.isOpened():
             raise RuntimeError(
                 "Failed to open camera with GStreamer pipeline. "
                 "Check sensor-mode, camera connection, or nvargus-daemon."

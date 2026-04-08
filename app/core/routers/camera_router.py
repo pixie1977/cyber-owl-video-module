@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 lock = threading.Lock()
 cap = None
 camera = Camera()  # для jetson.utils.gstCamera
+frame_reader = FrameReader(camera, "nv")
 cuda_img = None
 
 # Попытка импорта jetson.utils
@@ -27,7 +28,7 @@ JETSON_CAMERA_AVAILABLE = False
 def get_frame():
     with lock:
         try:
-            ret, img = camera.getFrame()
+            ret, img = frame_reader.getFrame()
             if not ret or img is None:
                 logger.warning("⚠️ Не удалось получить кадр через OpenCV")
                 return None
