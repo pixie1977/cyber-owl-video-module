@@ -80,6 +80,10 @@ class Camera(object):
         
         # Создаем и запускаем поток для чтения кадров
         self.frame_reader = FrameReader(self.cap, "frame_reader")
+        
+        # Даем потоку немного времени на инициализацию
+        import time
+        time.sleep(0.5)
 
     def open_camera(self):
         # Используем GStreamer-пайплайн
@@ -91,14 +95,25 @@ class Camera(object):
             )
 
     def getFrame(self):
-        if self.frame_reader and self.frame_reader.is_alive():
-            try:
-                frame = self.frame_reader.getFrame(timeout=2.0)
-                return (True, frame) if frame is not None else (False, None)
-            except Exception as e:
-                print(f"Frame reader error: {e}")
-                return (False, None)
-        return (False, None)
+        if self.cap is None:
+            return (False, None)
+            
+        # Пробуем получить кадр напрямую, если frame_reader недоступен
+        if not self.frame_reader or not self.frame_reader.is_alive():
+            ret, frame = self.cap.read()
+            if ret and frame is not None:
+                return (True, frame)
+            return (False, None)
+            
+        # Используем frame_reader если он доступен
+        try:
+            frame = self.frame_reader.getFrame(timeout=2.0)
+            return (True, frame) if frame is not None else (False, None)
+        except Exception as e:
+            print(f"Frame reader error: {e}")
+            # При ошибке frame_reader пробуем прямое чтение
+            ret, frame = self.cap.read()
+            return (True, frame) if ret and frame is not None else (False, None)
 
     def close(self):
         self.cap.release()
