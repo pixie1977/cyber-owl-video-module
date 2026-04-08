@@ -46,7 +46,7 @@ class FrameReader(threading.Thread):
                 if not self.queue.full():
                     self.queue.put(frame)
                     print("фреймы в очереди")
-            time.sleep(0.04)  # Небольшая задержка для снижения нагрузки на CPU
+            time.sleep(0.01)  # Небольшая задержка для снижения нагрузки на CPU
 
     def getFrame(self, timeout=None):
         return self.queue.get(timeout=timeout)
@@ -95,6 +95,7 @@ class Camera(object):
             )
 
     def getFrame(self):
+        time.sleep(0.04)
         # Используем frame_reader если он доступен
         try:
             frame = self.frame_reader.getFrame(timeout=2.0)
