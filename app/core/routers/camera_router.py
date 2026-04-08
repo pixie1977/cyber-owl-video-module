@@ -1,12 +1,11 @@
-from fastapi import APIRouter, Request
-from starlette.responses import StreamingResponse
-from app.core.low_evel.camera import Camera, FrameReader
-import threading
-from datetime import datetime
+import asyncio
 import logging
+from datetime import datetime
+
 import cv2
 import numpy as np
-
+from fastapi import APIRouter, Request
+from starlette.responses import StreamingResponse
 from app.config.config import settings
 
 router = APIRouter(prefix="/camera", tags=["camera"])
@@ -15,60 +14,97 @@ router = APIRouter(prefix="/camera", tags=["camera"])
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Глобальные переменные
-lock = threading.Lock()
-cap = None
-camera = Camera()  # для jetson.utils.gstCamera
-cuda_img = None
-
 # Попытка импорта jetson.utils
-JETSON_CAMERA_AVAILABLE = False
+try:
+    import jetson.utils
+    JETSON_CAMERA_AVAILABLE = True
+    logger.info("✅ Используется jetson.utils.gstCamera")
+except ImportError as e:
+    logger.error(f"❌ Не удалось импортировать jetson.utils: {e}")
+    JETSON_CAMERA_AVAILABLE = False
+
+# Глобальные переменные
+camera = None  # для jetson.utils.gstCamera
+img_cuda = None  # текущий кадр в CUDA
+
+def open_camera():
+    global camera, img_cuda
+    if not JETSON_CAMERA_AVAILABLE:
+        logger.error("❌ jetson.utils недоступен")
+        return False
+    try:
+        # Открываем камеру: 640x480, 30 FPS
+        camera = jetson.utils.gstCamera(640, 480, "0")  # sensor-id=0
+        camera.Open()
+        logger.info("📷 Камера jetson.utils.gstCamera успешно открыта")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка открытия камеры: {e}")
+        return False
 
 def get_frame():
-    # with lock:
+    global camera, img_cuda
     try:
-        ret, img = camera.getFrame()
-        if not ret or img is None:
-            logger.warning("⚠️ Не удалось получить кадр через OpenCV")
+        # Захват кадра в формате RGBA (на GPU)
+        img_cuda, width, height = camera.CaptureRGBA(timeout=2000)
+        if img_cuda is None:
+            logger.warning("⚠️ Не удалось захватить кадр (timeout)")
             return None
     except Exception as e:
         logger.error(f"📷 Ошибка захвата кадра: {e}")
         return None
 
-    # Проверяем, что изображение не пустое и не заполнено одним цветом
-    if img is None or img.size == 0 or (img.ndim >= 2 and np.all(img == img[0,0])):
-        logger.warning("⚠️ Получено изображение заполненное одним цветом или пустое")
+    # Конвертируем CUDA -> Numpy (CPU), BGR (OpenCV)
+    img_cpu = jetson.utils.cudaToNumpy(img_cuda)
+    img_bgr = cv2.cvtColor(img_cpu, cv2.COLOR_RGBA2BGR)
+
+    # Проверка: не пустое ли изображение
+    if img_bgr.size == 0 or (img_bgr.ndim >= 2 and np.all(img_bgr == img_bgr[0,0])):
+        logger.warning("⚠️ Получено пустое или одноцветное изображение")
+        return None
+
+    # Фильтр подозрительных кадров (например, полностью белое/зелёное)
+    mean_val = np.mean(img_bgr)
+    std_val = np.std(img_bgr)
+    if mean_val > 200 and std_val < 50:
+        logger.warning("⚠️ Подозрительный кадр: высокая яркость, низкая вариация")
         return None
 
     # Добавляем метку времени
     font = cv2.FONT_HERSHEY_SIMPLEX
     timestamp = str(datetime.now().time())
-    cv2.putText(img, timestamp, (10, 50), font, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(img_bgr, timestamp, (10, 50), font, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
 
-    # Дополнительная проверка: если среднее значение пикселей слишком высокое (например, все зеленое), пропускаем кадр
-    if np.mean(img) > 200 and np.std(img) < 50:  # Высокое среднее и низкое стандартное отклонение
-        logger.warning("⚠️ Получено подозрительное изображение (возможно, шум или ошибка)")
-        return None
-
-    # Кодируем в JPEG с качеством 80 для баланса качества и производительности
-    ret, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    # Кодируем в JPEG
+    ret, jpg = cv2.imencode(".jpg", img_bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])
     if not ret:
-        logger.warning("⚠️ Не удалось закодировать изображение")
+        logger.warning("⚠️ Не удалось закодировать изображение в JPEG")
         return None
 
     return bytes(jpg)
 
-def generate_video_stream():
-    while True:
-        frame = get_frame()
-        if frame is None:
-            continue
-        yield (
-            b"--frame\r\n"
-            b"Content-Type: image/jpeg\r\n\r\n"
-            + frame
-            + b"\r\n"
-        )
+async def generate_video_stream():
+    if not JETSON_CAMERA_AVAILABLE:
+        logger.error("❌ jetson.utils недоступен, поток не запущен")
+        return
+
+    if camera is None:
+        if not open_camera():
+            return
+
+    try:
+        while True:
+            frame = get_frame()
+            if frame is None:
+                await asyncio.sleep(0.01)
+                continue
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+            )
+            await asyncio.sleep(0.01)  # даем шанс на отключение
+    except GeneratorExit:
+        logger.info("🚪 Клиент отключился от видеопотока")
 
 @router.get("/")
 async def index_page(request: Request):
