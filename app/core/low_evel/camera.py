@@ -54,12 +54,10 @@ class FrameReader(threading.Thread):
     def getFrame(self, timeout=0.1):  # Сократили таймаут
         try:
             return self.queue.get_nowait()  # Попробуем без блокировки
-        except Queue.Empty:
+        except Exception:
             pass
         try:
             return self.queue.get(timeout=timeout)
-        except Queue.Empty:
-            return None
         except Exception as e:
             print(f"Ошибка получения кадра: {e}")
             return None
