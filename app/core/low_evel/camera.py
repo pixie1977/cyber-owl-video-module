@@ -95,16 +95,6 @@ class Camera(object):
             )
 
     def getFrame(self):
-        if self.cap is None:
-            return (False, None)
-            
-        # Пробуем получить кадр напрямую, если frame_reader недоступен
-        if not self.frame_reader or not self.frame_reader.is_alive():
-            ret, frame = self.cap.read()
-            if ret and frame is not None:
-                return (True, frame)
-            return (False, None)
-            
         # Используем frame_reader если он доступен
         try:
             frame = self.frame_reader.getFrame(timeout=2.0)
