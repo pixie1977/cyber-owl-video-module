@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 
 # Попытка импорта jetson.utils
 try:
-    import jetson.utils
-    JETSON_CAMERA_AVAILABLE = True
-    logger.info("✅ Используется jetson.utils.gstCamera")
-except ImportError as e:
-    logger.error(f"❌ Не удалось импортировать jetson.utils: {e}")
-    JETSON_CAMERA_AVAILABLE = False
+    import jetson_inference_python as jetson_inference
+    import jetson_utils_python as jetson_utils
+except ImportError:
+    import jetson_inference
+    import jetson_utils
+
 
 # Глобальные переменные
 camera = None  # для jetson.utils.gstCamera
