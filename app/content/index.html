@@ -4,11 +4,29 @@
     <title>Jetson WebRTC Stream</title>
     <!-- Подключаем скрипт из комплекта jetson-utils -->
     <script src="http://{{ ip }}:8554/webrtc.js"></script>
+    <script type="text/javascript">
+        // Функция запускается при загрузке страницы
+        window.onload = function() {
+            // Берем текущий IP из адресной строки браузера
+            var pc_ip = window.location.hostname;
+            var stream_url = 'http://' + pc_ip + ':8554/my_stream';
+
+            console.log("Connecting to stream:", stream_url);
+
+            // Используем встроенную в jetson-utils функцию захвата
+            // 'video-player' — это ID вашего тега <video>
+            playStream('video-player', stream_url);
+        };
+    </script>
+
+
 </head>
 <body onload="playStream('video-canvas', 'http://' + window.location.hostname + ':8554/my_stream')">
-    <h1>Live Stream (Hardware Accelerated)</h1>
-    <div style="width: 1280px; height: 720px;">
-        <video id="video-canvas" autoplay playsinline muted style="width: 100%; border: 1px solid #000;"></video>
-    </div>
+<h1>Live Stream (Hardware Accelerated)</h1>
+<!-- В теле страницы должен быть этот тег -->
+<video id="video-player" autoplay playsinline muted style="width: 100%; max-width: 1280px;"></video>
+
+<!-- Обязательно подключите скрипт самого WebRTC сервера -->
+<script src="http://{{ ip }}:8554/webrtc.js"></script>
 </body>
 </html>
