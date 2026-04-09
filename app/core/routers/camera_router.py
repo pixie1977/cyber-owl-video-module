@@ -29,9 +29,6 @@ img_cuda = None  # текущий кадр в CUDA
 
 def open_camera():
     global camera, img_cuda
-    if not JETSON_CAMERA_AVAILABLE:
-        logger.error("❌ jetson.utils недоступен")
-        return False
     try:
         # Открываем камеру: 640x480, 30 FPS
         camera = camera = jetson_utils.videoSource("csi://0")
@@ -55,8 +52,8 @@ def get_frame():
         return None
 
     # Конвертируем CUDA -> Numpy (CPU), BGR (OpenCV)
-    img_cpu = jetson.utils.cudaToNumpy(img_cuda)
-    img_bgr = cv2.cvtColor(img_cpu, cv2.COLOR_RGBA2BGR)
+    #img_cpu = jetson_utils.cudaToNumpy(img_cuda)
+    img_bgr = img_cuda #cv2.cvtColor(img_cpu, cv2.COLOR_RGBA2BGR)
 
     # Проверка: не пустое ли изображение
     if img_bgr.size == 0 or (img_bgr.ndim >= 2 and np.all(img_bgr == img_bgr[0,0])):
