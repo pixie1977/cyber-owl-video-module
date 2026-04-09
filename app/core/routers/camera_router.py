@@ -81,9 +81,6 @@ def get_frame():
     return bytes(jpg)
 
 async def generate_video_stream():
-    if not JETSON_CAMERA_AVAILABLE:
-        logger.error("❌ jetson.utils недоступен, поток не запущен")
-        return
 
     if camera is None:
         if not open_camera():
