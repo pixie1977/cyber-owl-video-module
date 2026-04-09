@@ -34,7 +34,7 @@ def open_camera():
         return False
     try:
         # Открываем камеру: 640x480, 30 FPS
-        camera = jetson.utils.gstCamera(640, 480, "0")  # sensor-id=0
+        camera = camera = jetson_utils.videoSource("csi://0")
         camera.Open()
         logger.info("📷 Камера jetson.utils.gstCamera успешно открыта")
         return True
@@ -46,7 +46,7 @@ def get_frame():
     global camera, img_cuda
     try:
         # Захват кадра в формате RGBA (на GPU)
-        img_cuda, width, height = camera.CaptureRGBA(timeout=2000)
+        img_cuda = camera.Capture()
         if img_cuda is None:
             logger.warning("⚠️ Не удалось захватить кадр (timeout)")
             return None
