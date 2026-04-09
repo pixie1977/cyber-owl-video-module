@@ -2,16 +2,18 @@
 <html>
 <head>
     <title>Jetson WebRTC Stream</title>
-    <!-- Подключаем скрипт WebRTC -->
-    <script src="http://{{ ip }}:8554/webrtc.js"></script>
     <script type="text/javascript">
         window.onload = function() {
             const pc_ip = window.location.hostname;
             const stream_url = `http://${pc_ip}:8554/my_stream`;
             console.log("Connecting to stream:", stream_url);
 
-            // Используем playStream из webrtc.js
-            playStream('video-player', stream_url);
+            // Инициализируем WebRTC соединение после загрузки скрипта
+            if (typeof playStream === 'function') {
+                playStream('video-player', stream_url);
+            } else {
+                console.error('playStream function is not available. webrtc.js may not be loaded properly.');
+            }
         };
     </script>
 </head>
