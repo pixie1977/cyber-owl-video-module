@@ -14,7 +14,7 @@ python-Levenshtein
 python-multipart
 scipy
 pymodbus==3.8.0
-opencv-python-headless==4.5.5.64
+opencv-python-headless==4.8.1.78
 faiss-cpu
 insightface
 onnxruntime
