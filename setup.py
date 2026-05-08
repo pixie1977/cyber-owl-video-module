@@ -19,6 +19,7 @@ setup(
         "numpy>=1.23.5",
         "jinja2",
         "faiss-cpu",
+        "insightface",
     ],
     entry_points={
         "console_scripts": [
