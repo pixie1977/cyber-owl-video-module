@@ -209,9 +209,8 @@ def run_jetson_stream() -> None:
                     logger.warning("Frame not captured from Jetson camera")
                     continue
                 output_stream.Render(img)
-                status = output_stream.GetStatus()
                 fps = output_stream.GetFrameRate()
-                logger.debug(f"Streaming @ {fps:.1f} FPS | Status: {status}")
+                logger.debug(f"Streaming @ {fps:.1f} FPS via WebRTC")
 
         except Exception as e:
             logger.error(f"Jetson stream error: {e}")
