@@ -282,32 +282,48 @@ async def video_feed() -> StreamingResponse:
 @router.get("/detect", response_model=DetectionResponse)
 async def detect_faces(response: Response):
     """
-    Эндпоинт для детекции и распознавания лиц на текущем кадре.
-    Возвращает список лиц с координатами, именами и уверенностью.
-    Кэширование запрещено.
+    Эндпоинт для детекции лиц.
+    Использует jetson_utils при наличии, иначе OpenCV.
+    Возвращает JSON с bbox, именем и уверенностью.
     """
-    # Запрещаем кэширование
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
 
-    global cap, face_app
+    global cap, camera_source, face_app
 
     if face_app is None:
         logger.error("Face analysis model not initialized")
         return DetectionResponse(timestamp=str(datetime.now()), faces=[], success=False)
 
+    # === Захват кадра: jetson_utils или OpenCV ===
+    frame = None
+
     if USE_JETSON_CAMERA:
-        frame = camera_source.Capture()
+        # Попробуем захватить через jetson_utils
+        try:
+            if camera_source is None:
+                camera_source = jetson_utils.videoSource("csi://0")
+            img = camera_source.Capture(timeout=1000)  # таймаут 1 сек
+            if img is not None:
+                # Преобразуем CUDA image → numpy array
+                frame = jetson_utils.cudaToNumpy(img)
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+        except Exception as e:
+            logger.warning(f"Failed to capture via jetson_utils: {e}")
     else:
+        # Fallback: OpenCV
         init_camera()
-        ret, frame = cap.read()
+        if cap is not None and cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                frame = None
 
     if frame is None:
-        logger.warning("Failed to capture frame for detection")
+        logger.warning("Failed to capture frame from any source")
         return DetectionResponse(timestamp=str(datetime.now()), faces=[], success=False)
 
-    # Подготовка кадра
+    # === Обработка кадра (одинаково для обоих источников) ===
     small_frame = cv2.resize(frame, (640, 480))
     rgb_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
@@ -322,14 +338,15 @@ async def detect_faces(response: Response):
 
     # Распознавание
     detections = []
-    h_ratio, w_ratio = frame.shape[0] / 480, frame.shape[1] / 640
+    h_ratio = frame.shape[0] / 480
+    w_ratio = frame.shape[1] / 640
 
     for face in faces:
         bbox = face.bbox.astype(int)
         query_emb = face.normed_embedding.reshape(1, -1).astype('float32')
 
-        if faiss_index is not None and len(db_embeddings_local) > 0:
-            distances, indices = faiss_index.search(query_emb, k=1)
+        if index is not None and len(db_embeddings_local) > 0:
+            distances, indices = index.search(query_emb, k=1)
             score = distances[0][0]
             idx = indices[0][0]
 
