@@ -18,6 +18,7 @@ setup(
         "opencv-python-headless>=4.5.5.64",
         "numpy>=1.23.5",
         "jinja2",
+        "faiss-cpu",
     ],
     entry_points={
         "console_scripts": [
