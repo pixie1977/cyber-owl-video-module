@@ -6,7 +6,7 @@ import urllib.request
 
 # --- 1. Настройки модели ---
 MODEL_URL = "http://download.tensorflow.org/models/object_detection/ssd_mobilenet_v2_coco_2018_03_29.tar.gz"
-MODEL_DIR = "ssd_mobilenet_v2_coco_2018_03_29"
+MODEL_DIR = "detection/ssd_mobilenet_v2_coco_2018_03_29"
 MODEL_PATH = os.path.join(MODEL_DIR, "frozen_inference_graph.pb")
 PROTO_PATH = os.path.join(MODEL_DIR, "ssd_mobilenet_v2_coco_2018_03_29.pbtxt")
 

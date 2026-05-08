@@ -5,7 +5,7 @@ from scipy.optimize import linear_sum_assignment
 import mediapipe as mp
 
 # --- Настройки ---
-DATASET_PATH = "face_dataset"
+DATASET_PATH = "detection/face_dataset"
 MODEL_PATH = os.path.join(DATASET_PATH, "face_recognition_sface_2021dec.onnx")
 MODEL_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx"
 CONFIDENCE_THRESHOLD = 0.363

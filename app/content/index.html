@@ -1,27 +1,12 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Jetson WebRTC Stream</title>
-    <script type="text/javascript">
-        window.onload = function() {
-            const pc_ip = window.location.hostname;
-            const stream_url = `http://${pc_ip}:8554/my_stream`;
-            console.log("Connecting to stream:", stream_url);
-
-            // Инициализируем WebRTC соединение после загрузки скрипта
-            if (typeof playStream === 'function') {
-                playStream('video-player', stream_url);
-            } else {
-                console.error('playStream function is not available. webrtc.js may not be loaded properly.');
-            }
-        };
-    </script>
-</head>
+<head><title>Camera</title></head>
 <body>
-<h1>Live Stream (Hardware Accelerated)</h1>
-<video id="video-player" autoplay playsinline muted style="width: 100%; max-width: 1280px;"></video>
-
-<!-- Важно: подключение webrtc.js ДО конца body -->
-<script src="http://{{ ip }}:8554/webrtc.js"></script>
+<h1>Live Stream</h1>
+{% if mode == "webrtc" %}
+    <p>WebRTC: <a href="{{ stream_url }}">{{ stream_url }}</a></p>
+{% else %}
+    <img src="{{ stream_url }}" alt="MJPEG Stream" />
+{% endif %}
 </body>
 </html>

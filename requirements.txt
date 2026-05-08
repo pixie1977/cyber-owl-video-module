@@ -1,5 +1,6 @@
 fastapi==0.129.0
 fuzzywuzzy==0.18.0
+jinja2
 omegaconf==2.3.0
 pydantic==2.12.5
 pygame==2.6.1

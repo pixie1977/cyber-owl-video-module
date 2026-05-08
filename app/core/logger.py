@@ -24,7 +24,7 @@ handler.setFormatter(formatter)
 
 # Настраиваем корневой логгер
 logger = logging.getLogger("MBB_logger")
-logger.setLevel(settings.get_log_level())
+logger.setLevel(settings.log_level)  # ⬅️ Изменено: не метод, а атрибут
 logger.addHandler(handler)
 
 # Добавляем вывод в консоль

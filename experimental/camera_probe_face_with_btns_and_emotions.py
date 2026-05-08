@@ -8,12 +8,12 @@ import mediapipe as mp
 import onnxruntime as ort
 
 # --- Настройки ---
-DATASET_PATH = "face_dataset"
-FACE_MODEL_PATH = os.path.join("models", "face_detection")
+DATASET_PATH = "detection/face_dataset"
+FACE_MODEL_PATH = os.path.join("detection/models", "face_detection")
 FACE_MODEL_PATH = os.path.join(FACE_MODEL_PATH, "face_recognition_sface_2021dec.onnx")
 FACE_MODEL_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx"
 
-EMOTION_MODEL_PATH = "models/emotion/emotion-ferplus-12-int8.onnx"
+EMOTION_MODEL_PATH = "detection/models/emotion/emotion-ferplus-12-int8.onnx"
 EMOTION_URL = "https://huggingface.co/microsoft/emotion-ferplus/resolve/main/emotion-ferplus-8.onnx?download=true"
 CONFIDENCE_THRESHOLD = 0.363
 SKIP_FRAMES = 5
