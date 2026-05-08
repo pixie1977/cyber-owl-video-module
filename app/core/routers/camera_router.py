@@ -19,7 +19,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from config.config import settings
+from app.config.config import settings
 
 # === Импорты для face_analysis ===
 from app.core.face_analysis.core import get_pipeline
