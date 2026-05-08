@@ -6,6 +6,7 @@ echo "🚀 Запуск Cyber Owl Video сервера..."
 # Проверка и активация виртуального окружения
 VENV_DIR="./venv"
 PYTHON="$VENV_DIR/bin/python"
+export PYTHONPATH=/usr/lib/python3.10/dist-packages:$PYTHONPATH
 
 if [ ! -d "$VENV_DIR" ]; then
     echo "📁 Создаём виртуальное окружение..."
