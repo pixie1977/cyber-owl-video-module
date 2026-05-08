@@ -20,6 +20,7 @@ setup(
         "jinja2",
         "faiss-cpu",
         "insightface",
+        "onnxruntime",
     ],
     entry_points={
         "console_scripts": [
