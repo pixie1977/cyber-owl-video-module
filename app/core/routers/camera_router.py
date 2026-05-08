@@ -290,7 +290,7 @@ async def detect_faces(response: Response):
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
 
-    global cap, camera_source, face_app
+    global cap, camera_source, face_app, faiss_index
 
     if face_app is None:
         logger.error("Face analysis model not initialized")
@@ -345,8 +345,8 @@ async def detect_faces(response: Response):
         bbox = face.bbox.astype(int)
         query_emb = face.normed_embedding.reshape(1, -1).astype('float32')
 
-        if index is not None and len(db_embeddings_local) > 0:
-            distances, indices = index.search(query_emb, k=1)
+        if faiss_index is not None and len(db_embeddings_local) > 0:
+            distances, indices = faiss_index.search(query_emb, k=1)
             score = distances[0][0]
             idx = indices[0][0]
 
