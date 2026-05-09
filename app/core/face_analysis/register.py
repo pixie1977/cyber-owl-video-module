@@ -1,7 +1,14 @@
+import sys
+
 import cv2
 import numpy as np
 import os
 
+# Добавляем корень проекта
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+sys.path.insert(0, project_root)
+
+# Теперь можно импортировать app и config
 # Изменён импорт: теперь абсолютный
 from app.core.face_analysis.core import get_pipeline
 from config.config import settings
