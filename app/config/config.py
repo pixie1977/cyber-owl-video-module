@@ -48,6 +48,8 @@ class Settings:
         self.IS_JETSON: bool = self._get_bool("IS_JETSON", False)
         self.DEBUG: bool = self._get_bool("DEBUG", False)
 
+        self.FACE_DETECTION_MODEL_NAME: str = self._get_str('FACE_DETECION_MODE_NAME', 'buffalo_l')
+
         # Таймауты
         self.CAMERA_STREAM_TIMEOUT: float = self._get_float("CAMERA_STREAM_TIMEOUT", 10.0)
         self.CAMERA_CAPTURE_TIMEOUT: float = self._get_float("CAMERA_CAPTURE_TIMEOUT", 5.0)
