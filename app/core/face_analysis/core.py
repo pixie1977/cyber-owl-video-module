@@ -2,7 +2,7 @@
 import logging
 from insightface.app import FaceAnalysis
 
-from config.config import settings
+from app.config.config import settings
 
 logger = logging.getLogger(__name__)
 
