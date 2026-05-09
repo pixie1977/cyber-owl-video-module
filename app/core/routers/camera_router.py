@@ -60,11 +60,14 @@ def update_embeddings():
     global db_embeddings_local
     global cap, face_app, faiss_index
 
+    logger.info("=====LOADING EMBEDDING DATABASE====")
     for file in sorted(glob.glob(f"{settings.EMBEDDINGS_DIR}/*.npy")):
         name = os.path.basename(file).replace(".npy", "")
+        logger.info(f"=====>{name}")
         embedding = np.load(file)
         db_names_local.append(name)
         db_embeddings_local.append(embedding)
+    logger.info("=====COMPLETE====")
 
     # Инициализация модели распознавания лиц
     try:
