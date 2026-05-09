@@ -14,7 +14,7 @@ from app.core.face_analysis.core import get_pipeline
 from config.config import settings
 
 
-def main():
+def register_face():
     app = get_pipeline()
     os.makedirs(settings.EMBEDDINGS_DIR, exist_ok=True)
 
@@ -50,4 +50,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    register_face()
