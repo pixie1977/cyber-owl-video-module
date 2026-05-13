@@ -198,7 +198,7 @@ def run_jetson_stream() -> None:
     global output_stream, camera_source
     while True:
         try:
-            camera_source = jetson_utils.videoSource("csi://0")
+            camera_source = jetson_utils.videoSource("csi://0?width=640&height=480&framerate=15")
             port = settings.CAMERA_PORT
             if not port:
                 logger.error("CAMERA_PORT is not set")
