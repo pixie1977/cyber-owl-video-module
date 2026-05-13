@@ -7,8 +7,14 @@ from app.config.config import settings
 logger = logging.getLogger(__name__)
 
 def get_pipeline():
-    # Измени ctx_id на -1, чтобы принудительно выключить CUDA для видео
-    app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
-    # Или если используется инференс: ctx_id=-1
-    app.prepare(ctx_id=-1, det_size=(640, 640))
+    try:
+        logger.info("Попытка загрузить FaceAnalysis на GPU (ctx_id=0)")
+        app = FaceAnalysis(name=settings.FACE_DETECTION_MODEL_NAME, ctx_id=0, det_size=(640, 640))
+        app.prepare(ctx_id=0, det_size=(640, 640))
+        logger.info("FaceAnalysis успешно загружена на GPU")
+    except Exception as e:
+        logger.warning(f"Ошибка при загрузке на GPU: {e}. Переключаемся на CPU.")
+        app = FaceAnalysis(name=settings.FACE_DETECTION_MODEL_NAME, ctx_id=-1, det_size=(640, 640))
+        app.prepare(ctx_id=-1, det_size=(640, 640))
+        logger.info("FaceAnalysis загружена на CPU")
     return app
