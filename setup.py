@@ -7,6 +7,7 @@ setup(
     packages=find_packages(where="app"),
     package_dir={"": "app"},
     install_requires=[
+        "aiohttp",
         "torch",
         "torchaudio",
         "omegaconf",

@@ -66,6 +66,9 @@ class Settings:
 
         self.CAMERA_DETECTION_THRESHOLD: float = self._get_float("CAMERA_DETECTION_THRESHOLD", 0.5)
 
+        self.LLM_MODULE_HOST: str = self._get_str("LLM_MODULE_HOST")
+        self.LLM_MODULE_PORT: int = self._get_int("LLM_MODULE_PORT")
+
         # Валидация после инициализации
         self._post_init_validate()
 
@@ -132,6 +135,9 @@ class Settings:
         """Дополнительная валидация после инициализации."""
         if self.CAMERA_PORT < 1 or self.CAMERA_PORT > 65535:
             raise ValueError(f"Неверный порт: {self.CAMERA_PORT}. Должен быть в диапазоне 1–65535")
+
+        if self.LLM_MODULE_PORT < 1 or self.LLM_MODULE_PORT > 65535:
+            raise ValueError(f"Неверный порт обращения к модулю LLM: {self.LLM_MODULE_PORT}. Должен быть в диапазоне 1–65535")
 
         if self.CAMERA_DOC_ROOT.exists() and not self.CAMERA_DOC_ROOT.is_dir():
             raise ValueError(f"CAMERA_DOC_ROOT существует, но это не директория: {self.CAMERA_DOC_ROOT}")

@@ -1,3 +1,4 @@
+aiohttp
 fastapi==0.129.0
 fuzzywuzzy==0.18.0
 jinja2
