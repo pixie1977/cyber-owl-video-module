@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from app.config.config import settings
 # === Импорты для face_analysis ===
 from app.core.face_analysis.core import get_pipeline
-from integration.integration_adapter import PeriodicFacesDataSender
+from app.integration.integration_adapter import PeriodicFacesDataSender
 
 # Настройка логгера
 logger = logging.getLogger("MBB_logger")
