@@ -1,12 +1,9 @@
 import asyncio
-import json
 import threading
-import time
-from dataclasses import asdict
 from typing import Callable
 
-from core.logger import get_logger
-from integration.client import PostClient
+from app.core.logger import get_logger
+from app.integration.client import PostClient
 
 # --- Настройка логирования ---
 log = get_logger(__name__)
