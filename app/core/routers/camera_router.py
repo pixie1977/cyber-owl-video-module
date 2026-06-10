@@ -10,7 +10,6 @@ import logging
 import os
 import threading
 import time
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, List, Any
 
@@ -21,11 +20,10 @@ from fastapi import APIRouter, Request, Response, HTTPException, status
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from app.config.config import settings
 
+from app.config.config import settings
 # === Импорты для face_analysis ===
 from app.core.face_analysis.core import get_pipeline
-from integration.client import PostClient
 from integration.integration_adapter import PeriodicFacesDataSender
 
 # Настройка логгера
