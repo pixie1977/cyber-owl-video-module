@@ -368,6 +368,7 @@ async def camera_page(request: Request) -> HTMLResponse:
 
 
 @router.get("/video", response_class=Response)
+@router.get("/my_stream", response_class=Response)
 async def video_feed() -> StreamingResponse:
     """
     MJPEG поток для браузера (работает без Jetson).
