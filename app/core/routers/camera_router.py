@@ -334,14 +334,14 @@ async def camera_page(request: Request) -> HTMLResponse:
     Основная страница с видеотрансляцией.
     Показывает ссылку на WebRTC или MJPEG-поток.
     """
-    # Берём адрес сервера, а не клиента
     server_host = request.url.hostname or "127.0.0.1"
-    port = settings.CAMERA_PORT
-    if not port:
-        logger.error("CAMERA_PORT is not set")
-        return HTMLResponse(content="Server configuration error", status_code=500)
+    server_port = request.url.port or 8000
 
     if USE_JETSON_CAMERA:
+        port = settings.CAMERA_PORT
+        if not port:
+            logger.error("CAMERA_PORT is not set")
+            return HTMLResponse(content="Server configuration error", status_code=500)
         stream_url = f"http://{server_host}:{port}/my_stream"
         content = f"""
             <!DOCTYPE html>
