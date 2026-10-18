@@ -133,7 +133,7 @@ class RegisterFaceRequest(BaseModel):
 
 
 # --- Инициализация роутера ---
-router = APIRouter(prefix="/camera", tags=["camera"])
+router = APIRouter(tags=["camera"])
 
 
 def init_camera() -> None:
@@ -360,7 +360,7 @@ async def camera_page(request: Request) -> HTMLResponse:
             <head><title>Camera</title></head>
             <body>
                 <h1>Live Stream</h1>
-                <img src="/camera/video" alt="MJPEG Stream" style="max-width:100%" />
+                <img src="/video" alt="MJPEG Stream" style="max-width:100%" />
             </body>
             </html>
         """
