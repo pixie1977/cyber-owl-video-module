@@ -188,49 +188,45 @@ def init_camera(register: bool = False) -> None:
 
 def get_frame() -> Optional[bytes]:
     """Захватывает и кодирует один кадр с меткой времени.
-    Использует общий camera_source из run_jetson_stream() для избежания конфликтов.
+    Оптимизирован для MJPEG: минимум операций на кадр.
     """
     global cap, camera_source
 
     # === Jetson ===
     if USE_JETSON_CAMERA:
-        # Используем уже инициализированный camera_source из run_jetson_stream()
         if camera_source is None:
             logger.warning("Jetson camera_source not initialized, skipping frame")
             return None
 
         try:
-            # Блокируем захват кадра для избежания гонок с WebRTC
             with cam_lock:
                 img = camera_source.Capture(timeout=500)
             if img is None:
-                logger.warning("Frame not captured from Jetson camera")
                 return None
+            # Быстрое преобразование без flip и putText
             frame = jetson_utils.cudaToNumpy(img)
             frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
-            frame = cv2.flip(frame, 0)
+            # Уменьшаем разрешение для MJPEG (быстрее кодирование)
+            frame = cv2.resize(frame, (480, 360))
         except Exception as e:
             logger.error(f"Jetson frame capture failed: {e}")
             return None
     # === OpenCV ===
     else:
         init_camera()
-        with cam_lock:  # Защищаем cap.read()
+        with cam_lock:
             if cap is None or not cap.isOpened():
                 logger.warning("OpenCV camera not available")
                 return None
             ret, img = cap.read()
             if not ret or img is None:
-                logger.warning("Failed to capture frame from camera")
                 return None
             frame = img
+            # Уменьшаем разрешение для MJPEG
+            frame = cv2.resize(frame, (480, 360))
 
-    # Добавляем текущее время на кадр
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    cv2.putText(frame, str(datetime.now().time()), (10, 50), font, 1, (255, 255, 255), 2)
-
-    # Кодируем в JPEG
-    success, jpg = cv2.imencode('.jpg', frame)
+    # Кодируем в JPEG (быстро, без дополнительных операций)
+    success, jpg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
     return jpg.tobytes() if success else None
 
 
@@ -355,19 +351,40 @@ def get_faces_json() -> tuple[list[Any], bool]:
     return detections, True
 
 
+# === Глобальный буфер кадра для MJPEG ===
+mjpeg_buffer = {
+    "frame": None,
+    "timestamp": 0,
+    "lock": threading.Lock()
+}
+
+
 def generate_mjpeg_stream():
-    """Генератор MJPEG-потока."""
+    """Генератор MJPEG-потока. Использует общий буфер кадра."""
     while True:
-        frame = get_frame()
-        if frame is None:
-            time.sleep(0.05)
-            continue
+        with mjpeg_buffer["lock"]:
+            if mjpeg_buffer["frame"] is None:
+                time.sleep(0.1)
+                continue
+            frame = mjpeg_buffer["frame"]
+
         yield (
             b'--frame\r\n'
             b'Content-Type: image/jpeg\r\n\r\n' +
             frame + b'\r\n'
         )
-        time.sleep(0.05)  # ~20 FPS
+        time.sleep(0.2)  # ~5 FPS вместо 20
+
+
+def update_mjpeg_buffer():
+    """Фоновый поток: обновляет буфер кадра для всех MJPEG клиентов."""
+    while True:
+        frame_bytes = get_frame()
+        if frame_bytes is not None:
+            with mjpeg_buffer["lock"]:
+                mjpeg_buffer["frame"] = frame_bytes
+                mjpeg_buffer["timestamp"] = time.time()
+        time.sleep(0.2)  # ~5 FPS
 
 
 @router.on_event("startup")
@@ -376,6 +393,11 @@ async def startup_event() -> None:
     global stream_thread
 
     update_embeddings()
+
+    # Запускаем фоновый поток для обновления MJPEG буфера
+    mjpeg_thread = threading.Thread(target=update_mjpeg_buffer, daemon=True)
+    mjpeg_thread.start()
+    logger.info("MJPEG buffer thread started")
 
     # Инициализируем camera_source ДО запуска MJPEG-потока
     if USE_JETSON_CAMERA:
