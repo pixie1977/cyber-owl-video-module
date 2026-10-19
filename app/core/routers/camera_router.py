@@ -186,6 +186,10 @@ def get_faces_json() -> tuple[list[Any], bool] :
 
     if USE_JETSON_CAMERA:
         # Попробуем захватить через jetson_utils
+        # Ждем пару секунд на старте, пока поток WebRTC инициализирует физическое устройство
+        if camera_source is None:
+            time.sleep(3.0)
+
         try:
             if camera_source is None:
                 camera_source = jetson_utils.videoSource("csi://0")
