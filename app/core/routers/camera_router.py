@@ -172,6 +172,7 @@ def get_frame() -> Optional[bytes]:
                 return None
             frame = jetson_utils.cudaToNumpy(img)
             frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+            frame = cv2.flip(frame, 0)
         except Exception as e:
             logger.error(f"Jetson frame capture failed: {e}")
             return None
