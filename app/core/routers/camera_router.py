@@ -157,20 +157,42 @@ def init_camera() -> None:
 
 def get_frame() -> Optional[bytes]:
     """Захватывает и кодирует один кадр с меткой времени."""
-    global cap
-    init_camera()
+    global cap, camera_source
 
-    ret, img = cap.read()
-    if not ret or img is None:
-        logger.warning("Failed to capture frame from camera")
-        return None
+    # === Jetson ===
+    if USE_JETSON_CAMERA:
+        try:
+            if camera_source is None:
+                camera_source = jetson_utils.videoSource(
+                    "csi://0?width=640&height=480&framerate=15"
+                )
+            img = camera_source.Capture(timeout=2000)
+            if img is None:
+                logger.warning("Frame not captured from Jetson camera")
+                return None
+            frame = jetson_utils.cudaToNumpy(img)
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+        except Exception as e:
+            logger.error(f"Jetson frame capture failed: {e}")
+            return None
+    # === OpenCV ===
+    else:
+        init_camera()
+        if cap is None or not cap.isOpened():
+            logger.warning("OpenCV camera not available")
+            return None
+        ret, img = cap.read()
+        if not ret or img is None:
+            logger.warning("Failed to capture frame from camera")
+            return None
+        frame = img
 
     # Добавляем текущее время на кадр
     font = cv2.FONT_HERSHEY_SIMPLEX
-    cv2.putText(img, str(datetime.now().time()), (10, 50), font, 1, (255, 255, 255), 2)
+    cv2.putText(frame, str(datetime.now().time()), (10, 50), font, 1, (255, 255, 255), 2)
 
     # Кодируем в JPEG
-    success, jpg = cv2.imencode('.jpg', img)
+    success, jpg = cv2.imencode('.jpg', frame)
     return jpg.tobytes() if success else None
 
 
