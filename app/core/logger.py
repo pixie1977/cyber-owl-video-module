@@ -9,8 +9,9 @@ from logging.handlers import RotatingFileHandler
 from app.config.config import settings
 
 # Определяем путь к каталогу логов
-os.makedirs(settings.CAMERA_LOGS_DIR, exist_ok=True)
-LOG_FILE_PATH = os.path.join(settings.CAMERA_LOGS_DIR, "stt.log")
+if settings.CAMERA_LOGS_DIR:
+    os.makedirs(settings.CAMERA_LOGS_DIR, exist_ok=True)
+LOG_FILE_PATH = os.path.join(settings.CAMERA_LOGS_DIR, "camera.log")
 
 # Создаём форматтер
 formatter = logging.Formatter(

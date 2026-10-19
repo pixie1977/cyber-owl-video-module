@@ -25,6 +25,10 @@ from app.config.config import settings
 # === Импорты для face_analysis ===
 from app.core.face_analysis.core import get_pipeline
 from app.integration.integration_adapter import PeriodicFacesDataSender
+from app.core.meeting_manager import MeetingManager
+
+# === URL для LLM-модуля (должен быть определён ДО использования) ===
+LLM_ENDPOINT_URL: str = f"http://{settings.LLM_MODULE_HOST}:{settings.LLM_MODULE_PORT}/image_detect"
 
 # Настройка логгера
 logger = logging.getLogger("MBB_logger")
@@ -37,7 +41,10 @@ stream_thread: Optional[threading.Thread] = None
 
 # Блокировка и VideoCapture для OpenCV
 lock = threading.Lock()
+face_lock = threading.RLock()  # Для защиты face_app, faiss_index, db_names_local
+cam_lock = threading.Lock()  # Для защиты camera_source.Capture() из MJPEG и WebRTC
 cap = None
+cap_register = None  # Отдельная камера для регистрации
 camera_initialized = False
 face_app = None  # Модель face_analysis
 faiss_index = None
@@ -60,32 +67,38 @@ db_embeddings_local = []
 def update_embeddings():
     global db_names_local
     global db_embeddings_local
-    global cap, face_app, faiss_index
+    global face_app, faiss_index
 
     logger.info("=====LOADING EMBEDDING DATABASE====")
+    # Очищаем перед загрузкой, чтобы не дублировать
+    db_names_local.clear()
+    db_embeddings_local.clear()
+
     for file in sorted(glob.glob(f"{settings.EMBEDDINGS_DIR}/*.npy")):
         name = os.path.basename(file).replace(".npy", "")
         logger.info(f"=====>{name}")
         embedding = np.load(file)
         db_names_local.append(name)
         db_embeddings_local.append(embedding)
-    logger.info("=====COMPLETE====")
+    logger.info(f"=====COMPLETE: {len(db_names_local)} embeddings loaded=====")
 
-    # Инициализация модели распознавания лиц
+    # Инициализация модели распознавания лиц (ВНЕ face_lock — модель грузится долго)
     try:
         face_app = get_pipeline()
         logger.info("Face analysis pipeline initialized")
     except Exception as e:
         logger.error(f"Failed to initialize face analysis model: {e}")
 
-    # Создание FAISS индекса
-    if db_embeddings_local:
-        dim = db_embeddings_local[0].shape[0]
-        faiss_index = faiss.IndexFlatIP(dim)
-        faiss_index.add(np.array(db_embeddings_local).astype('float32'))
-    else:
-        logger.warning("No embeddings found in 'embeddings/' directory.")
-        faiss_index = None
+    # Создание FAISS индекса (защищено face_lock — быстрая операция)
+    with face_lock:
+        if db_embeddings_local:
+            dim = db_embeddings_local[0].shape[0]
+            faiss_index = faiss.IndexFlatIP(dim)
+            faiss_index.add(np.array(db_embeddings_local).astype('float32'))
+            logger.info(f"FAISS index created with {len(db_embeddings_local)} vectors")
+        else:
+            logger.warning("No embeddings found in 'embeddings/' directory.")
+            faiss_index = None
 
 def get_templates() -> Jinja2Templates:
     """
@@ -136,37 +149,60 @@ class RegisterFaceRequest(BaseModel):
 router = APIRouter(tags=["camera"])
 
 
-def init_camera() -> None:
+def init_camera(register: bool = False) -> None:
+    """Ленивая инициализация OpenCV камеры.
+    
+    :param register: если True, инициализирует отдельную камеру для регистрации
+    """
     if USE_JETSON_CAMERA:
         return
-    """Ленивая инициализация OpenCV камеры."""
-    global cap, camera_initialized
-    if not camera_initialized:
-        with lock:
-            if not camera_initialized:
-                cap = cv2.VideoCapture(0)
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-                cap.set(cv2.CAP_PROP_FPS, 15)
-                if not cap.isOpened():
-                    logger.error("Failed to open camera via OpenCV")
-                else:
-                    logger.info("OpenCV camera initialized")
-                camera_initialized = True
+    
+    # Определяем, какую камеру инициализировать
+    if register:
+        global cap_register
+        if cap_register is not None and cap_register.isOpened():
+            return
+    else:
+        global cap
+        if cap is not None and cap.isOpened():
+            return
+    
+    # Создаём новую камеру
+    new_cap = cv2.VideoCapture(0)
+    new_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    new_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    new_cap.set(cv2.CAP_PROP_FPS, 15)
+    
+    if not new_cap.isOpened():
+        logger.error("Failed to open camera via OpenCV")
+        return
+    
+    logger.info("OpenCV camera initialized")
+    
+    # Сохраняем в нужную глобальную переменную
+    if register:
+        cap_register = new_cap
+    else:
+        cap = new_cap
 
 
 def get_frame() -> Optional[bytes]:
-    """Захватывает и кодирует один кадр с меткой времени."""
+    """Захватывает и кодирует один кадр с меткой времени.
+    Использует общий camera_source из run_jetson_stream() для избежания конфликтов.
+    """
     global cap, camera_source
 
     # === Jetson ===
     if USE_JETSON_CAMERA:
+        # Используем уже инициализированный camera_source из run_jetson_stream()
+        if camera_source is None:
+            logger.warning("Jetson camera_source not initialized, skipping frame")
+            return None
+
         try:
-            if camera_source is None:
-                camera_source = jetson_utils.videoSource(
-                    "csi://0?width=640&height=480&framerate=15"
-                )
-            img = camera_source.Capture(timeout=2000)
+            # Блокируем захват кадра для избежания гонок с WebRTC
+            with cam_lock:
+                img = camera_source.Capture(timeout=500)
             if img is None:
                 logger.warning("Frame not captured from Jetson camera")
                 return None
@@ -179,14 +215,15 @@ def get_frame() -> Optional[bytes]:
     # === OpenCV ===
     else:
         init_camera()
-        if cap is None or not cap.isOpened():
-            logger.warning("OpenCV camera not available")
-            return None
-        ret, img = cap.read()
-        if not ret or img is None:
-            logger.warning("Failed to capture frame from camera")
-            return None
-        frame = img
+        with cam_lock:  # Защищаем cap.read()
+            if cap is None or not cap.isOpened():
+                logger.warning("OpenCV camera not available")
+                return None
+            ret, img = cap.read()
+            if not ret or img is None:
+                logger.warning("Failed to capture frame from camera")
+                return None
+            frame = img
 
     # Добавляем текущее время на кадр
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -197,9 +234,10 @@ def get_frame() -> Optional[bytes]:
     return jpg.tobytes() if success else None
 
 
-def get_faces_json() -> tuple[list[Any], bool] :
+def get_faces_json() -> tuple[list[Any], bool]:
     global cap, camera_source, face_app, faiss_index
 
+    # Проверяем face_app (чтение атомарно в Python через GIL)
     if face_app is None:
         logger.error("Face analysis model not initialized")
         return [], False
@@ -208,17 +246,15 @@ def get_faces_json() -> tuple[list[Any], bool] :
     frame = None
 
     if USE_JETSON_CAMERA:
-        # Попробуем захватить через jetson_utils
-        # Ждем пару секунд на старте, пока поток WebRTC инициализирует физическое устройство
+        # Используем общий camera_source из run_jetson_stream()
         if camera_source is None:
-            time.sleep(3.0)
+            logger.warning("camera_source not ready, skipping")
+            return [], False
 
         try:
-            if camera_source is None:
-                camera_source = jetson_utils.videoSource("csi://0")
-            img = camera_source.Capture(timeout=1000)  # таймаут 1 сек
+            with cam_lock:
+                img = camera_source.Capture(timeout=500)
             if img is not None:
-                # Преобразуем CUDA image → numpy array
                 frame = jetson_utils.cudaToNumpy(img)
                 frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
         except Exception as e:
@@ -226,10 +262,13 @@ def get_faces_json() -> tuple[list[Any], bool] :
     else:
         # Fallback: OpenCV
         init_camera()
-        if cap is not None and cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                frame = None
+        with cam_lock:  # Защищаем cap.read() от MJPEG-потока
+            if cap is not None and cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    frame = None
+            else:
+                logger.warning("OpenCV camera not available")
 
     if frame is None:
         logger.warning("Failed to capture frame from any source")
@@ -239,13 +278,14 @@ def get_faces_json() -> tuple[list[Any], bool] :
     small_frame = cv2.resize(frame, (640, 480))
     rgb_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
-    # Детекция лиц
-    faces = face_app.get(rgb_frame)
+    # Детекция лиц — face_app не thread-safe, берём блокировку
+    with face_lock:
+        faces = face_app.get(rgb_frame)
     if not faces:
         return [], True
 
-    # Распознавание
-    detections = []
+    # Подготовка данных для MeetingManager
+    detected_faces = []
     h_ratio = frame.shape[0] / 480
     w_ratio = frame.shape[1] / 640
 
@@ -253,34 +293,34 @@ def get_faces_json() -> tuple[list[Any], bool] :
         bbox = face.bbox.astype(int)
         query_emb = face.normed_embedding.reshape(1, -1).astype('float32')
 
-        if faiss_index is not None and len(db_embeddings_local) > 0:
-            distances, indices = faiss_index.search(query_emb, k=1)
-            score = distances[0][0]
-            idx = indices[0][0]
+        detected_faces.append({
+            "embedding": query_emb,
+            "bbox": bbox.tolist(),
+            "confidence": float(face.get("confidence", 0.0)),
+            "age": face.get("age"),
+            "sex": face.get("sex")
+        })
 
-            if score > settings.CAMERA_DETECTION_THRESHOLD:
-                name = db_names_local[idx]
-            else:
-                name = "Unknown"
-            confidence = float(score)
-        else:
-            name = "Unknown"
-            confidence = 0.0
+    # Обработка через MeetingManager
+    processed_faces = meeting_manager.process_faces(detected_faces)
 
-        # Масштабирование bbox к оригинальному размеру
+    # Распознавание и формирование результатов
+    detections = []
+
+    for processed_face in processed_faces:
         bbox_orig = [
-            int(bbox[0] * w_ratio),
-            int(bbox[1] * h_ratio),
-            int(bbox[2] * w_ratio),
-            int(bbox[3] * h_ratio)
+            int(processed_face["bbox"][0] * w_ratio),
+            int(processed_face["bbox"][1] * h_ratio),
+            int(processed_face["bbox"][2] * w_ratio),
+            int(processed_face["bbox"][3] * h_ratio)
         ]
 
         detections.append(FaceDetection(
             bbox=bbox_orig,
-            name=name,
-            age=face.get("age"),
-            sex=face.sex,
-            confidence=confidence
+            name=processed_face.get("face_name") or "Unknown",
+            age=processed_face.get("age"),
+            sex=processed_face.get("sex"),
+            confidence=processed_face.get("confidence", 0.0)
         ))
 
     return detections, True
@@ -291,13 +331,14 @@ def generate_mjpeg_stream():
     while True:
         frame = get_frame()
         if frame is None:
+            time.sleep(0.05)
             continue
         yield (
             b'--frame\r\n'
             b'Content-Type: image/jpeg\r\n\r\n' +
             frame + b'\r\n'
         )
-        threading.Event().wait(0.05)  # ~20 FPS
+        time.sleep(0.05)  # ~20 FPS
 
 
 @router.on_event("startup")
@@ -307,8 +348,18 @@ async def startup_event() -> None:
 
     update_embeddings()
 
-    # Запуск потока для Jetson
+    # Инициализируем camera_source ДО запуска MJPEG-потока
     if USE_JETSON_CAMERA:
+        try:
+            camera_source = jetson_utils.videoSource(
+                "csi://0?width=1280&height=720&framerate=30"
+            )
+            logger.info("Jetson camera_source initialized for MJPEG and face detection")
+        except Exception as e:
+            logger.error(f"Failed to initialize Jetson camera_source: {e}")
+            camera_source = None
+
+        # Запуск потока для WebRTC
         stream_thread = threading.Thread(target=run_jetson_stream, daemon=True)
         stream_thread.start()
         logger.info("Jetson WebRTC stream started")
@@ -319,24 +370,33 @@ async def startup_event() -> None:
 def run_jetson_stream() -> None:
     """Фоновая трансляция через Jetson (WebRTC)."""
     global output_stream, camera_source
+    port = settings.CAMERA_PORT
+    if not port:
+        logger.error("CAMERA_PORT is not set")
+        return
+
+    stream_url = f"webrtc://@:{port}/my_stream"
+    logger.info(f"WebRTC streaming started: {stream_url}")
+
     while True:
         try:
-            camera_source = jetson_utils.videoSource("csi://0?width=1280&height=720&framerate=30")
-            port = settings.CAMERA_PORT
-            if not port:
-                logger.error("CAMERA_PORT is not set")
-                break
-            output_stream = jetson_utils.videoOutput(f"webrtc://@:{port}/my_stream")
-            logger.info(f"WebRTC streaming started: webrtc://@:{port}/my_stream")
+            # Создаём камеру только если не инициализирована или была ошибка
+            if camera_source is None:
+                camera_source = jetson_utils.videoSource(
+                    "csi://0?width=1280&height=720&framerate=30"
+                )
+                output_stream = jetson_utils.videoOutput(stream_url)
+                logger.info("Jetson camera and output stream initialized")
 
-            while True:
+            with cam_lock:
                 img = camera_source.Capture()
-                if img is None:
-                    logger.warning("Frame not captured from Jetson camera")
-                    continue
-                output_stream.Render(img)
-                fps = output_stream.GetFrameRate()
-                logger.debug(f"Streaming @ {fps:.1f} FPS via WebRTC")
+            if img is None:
+                logger.warning("Frame not captured from Jetson camera")
+                camera_source = None  # Пересоздадим при следующей итерации
+                continue
+            output_stream.Render(img)
+            fps = output_stream.GetFrameRate()
+            logger.debug(f"Streaming @ {fps:.1f} FPS via WebRTC")
 
         except Exception as e:
             logger.error(f"Jetson stream error: {e}")
@@ -350,7 +410,9 @@ def run_jetson_stream() -> None:
                     camera_source.Close()
                 except Exception:
                     pass
-            threading.Event().wait(2)
+            camera_source = None  # Пересоздадим при следующей итерации
+            output_stream = None
+            time.sleep(2)
 
 
 # === ЭНДПОИНТЫ ===
@@ -434,56 +496,58 @@ async def register_face(request: RegisterFaceRequest):
     Ожидает, что на кадре ровно одно лицо.
     Делает 5 снимков, сохраняет эмбеддинги как {username}-{idx}.npy
     """
-    global face_app, cap
+    import re
 
     # Валидация username
-    if not request.username.islower() or not request.username.isalpha():
+    if not re.match(r'^[a-z][a-z0-9_]{1,29}$', request.username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username must contain only lowercase Latin letters"
+            detail="Username must be 1-30 chars: lowercase letters, digits, underscores"
         )
 
     username = request.username
 
-    # Инициализация камеры
-    init_camera()
-    if cap is None or not cap.isOpened():
+    # Инициализация отдельной камеры для регистрации
+    init_camera(register=True)
+    if cap_register is None or not cap_register.isOpened():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Camera not available"
         )
 
+    # Проверяем face_app (быстро, без блокировки)
     if face_app is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Face analysis model not initialized"
         )
 
-    embeddings = []
-    attempts = 0
-    max_attempts = 10
-    required_faces = 5
+    # face_app не thread-safe — блокируем на время детекции
+    with face_lock:
+        embeddings = []
+        attempts = 0
+        max_attempts = 30
+        required_faces = 5
 
-    while len(embeddings) < required_faces and attempts < max_attempts:
-        ret, frame = cap.read()
-        if not ret or frame is None:
+        while len(embeddings) < required_faces and attempts < max_attempts:
+            ret, frame = cap_register.read()
+            if not ret or frame is None:
+                attempts += 1
+                time.sleep(0.2)
+                continue
+
+            rgb_frame = cv2.cvtColor(cv2.resize(frame, (640, 480)), cv2.COLOR_BGR2RGB)
+            faces = face_app.get(rgb_frame)
+
+            if len(faces) == 1:
+                embedding = faces[0].normed_embedding
+                embeddings.append(embedding)
+                logger.info(f"Captured embedding {len(embeddings)}/{required_faces} for '{username}'")
+                time.sleep(0.5)
+            else:
+                logger.debug(f"Skipped frame: {len(faces)} faces detected (expected exactly 1)")
+
             attempts += 1
-            time.sleep(0.2)
-            continue
-
-        rgb_frame = cv2.cvtColor(cv2.resize(frame, (640, 480)), cv2.COLOR_BGR2RGB)
-        faces = face_app.get(rgb_frame)
-
-        if len(faces) == 1:
-            embedding = faces[0].normed_embedding
-            embeddings.append(embedding)
-            logger.info(f"Captured embedding {len(embeddings)}/{required_faces} for '{username}'")
-            # Задержка между кадрами
-            time.sleep(0.5)
-        else:
-            logger.debug(f"Skipped frame: {len(faces)} faces detected (expected exactly 1)")
-
-        attempts += 1
 
     if len(embeddings) < required_faces:
         raise HTTPException(
@@ -515,6 +579,16 @@ async def register_face(request: RegisterFaceRequest):
     }
 
 
-LLM_ENDPOINT_URL: str = "http://"+settings.LLM_MODULE_HOST+":"+str(settings.LLM_MODULE_PORT)+"/image_detect"
-data_sender=PeriodicFacesDataSender(get_faces_json, LLM_ENDPOINT_URL, 2)
+# === Глобальная инициализация (после определения всех функций) ===
+data_sender = PeriodicFacesDataSender(get_faces_json, LLM_ENDPOINT_URL, 2)
 data_sender.start()
+
+# === Инициализация менеджера встреч ===
+MEETING_STORAGE_PATH = settings.EMBEDDINGS_DIR.parent / "meeting_storage.json"
+meeting_manager = MeetingManager(
+    storage_path=MEETING_STORAGE_PATH,
+    llm_endpoint_url=LLM_ENDPOINT_URL,
+    detection_threshold=settings.CAMERA_DETECTION_THRESHOLD
+)
+meeting_manager.start()
+logger.info("MeetingManager initialized")

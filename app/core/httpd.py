@@ -25,6 +25,13 @@ async def lifespan(app: FastAPI):
     log.info("Starting up CAMERA server...")
     yield
     log.info("Shutting down CAMERA server...")
+    # Останавливаем фоновые задачи
+    if hasattr(camera_router, 'data_sender'):
+        camera_router.data_sender.stop()
+        log.info("PeriodicFacesDataSender stopped")
+    if hasattr(camera_router, 'meeting_manager'):
+        camera_router.meeting_manager.stop()
+        log.info("MeetingManager stopped")
 
 
 app = FastAPI(title="CAMERA API Server", lifespan=lifespan)
