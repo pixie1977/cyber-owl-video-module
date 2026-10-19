@@ -244,6 +244,7 @@ def get_faces_json() -> tuple[list[Any], bool]:
 
     # === Захват кадра: jetson_utils или OpenCV ===
     frame = None
+    capture_start = time.time()
 
     if USE_JETSON_CAMERA:
         # Используем общий camera_source из run_jetson_stream()
@@ -254,9 +255,11 @@ def get_faces_json() -> tuple[list[Any], bool]:
         try:
             with cam_lock:
                 img = camera_source.Capture(timeout=500)
+            capture_ms = (time.time() - capture_start) * 1000
             if img is not None:
                 frame = jetson_utils.cudaToNumpy(img)
                 frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+                logger.debug(f"Captured Jetson frame in {capture_ms:.0f}ms")
         except Exception as e:
             logger.warning(f"Failed to capture via jetson_utils: {e}")
     else:
@@ -265,8 +268,11 @@ def get_faces_json() -> tuple[list[Any], bool]:
         with cam_lock:  # Защищаем cap.read() от MJPEG-потока
             if cap is not None and cap.isOpened():
                 ret, frame = cap.read()
+                capture_ms = (time.time() - capture_start) * 1000
                 if not ret:
                     frame = None
+                else:
+                    logger.debug(f"Captured OpenCV frame in {capture_ms:.0f}ms")
             else:
                 logger.warning("OpenCV camera not available")
 
@@ -279,9 +285,13 @@ def get_faces_json() -> tuple[list[Any], bool]:
     rgb_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
     # Детекция лиц — face_app не thread-safe, берём блокировку
+    detect_start = time.time()
     with face_lock:
         faces = face_app.get(rgb_frame)
+    detect_ms = (time.time() - detect_start) * 1000
+
     if not faces:
+        logger.debug(f"No faces detected in {detect_ms:.0f}ms")
         return [], True
 
     # Подготовка данных для MeetingManager
@@ -301,6 +311,12 @@ def get_faces_json() -> tuple[list[Any], bool]:
             "sex": face.get("sex")
         })
 
+    # Логирование обнаруженных лиц
+    logger.info(
+        f"Faces detected: {len(faces)} in {detect_ms:.0f}ms | "
+        f"frame: {frame.shape[1]}x{frame.shape[0]}"
+    )
+
     # Обработка через MeetingManager
     processed_faces = meeting_manager.process_faces(detected_faces)
 
@@ -315,9 +331,22 @@ def get_faces_json() -> tuple[list[Any], bool]:
             int(processed_face["bbox"][3] * h_ratio)
         ]
 
+        face_name = processed_face.get("face_name") or "Unknown"
+        face_uuid = processed_face.get("face_uuid")
+        face_type = processed_face.get("face_type")
+        is_first = processed_face.get("is_first_meeting", False)
+        meeting_msg = processed_face.get("meeting_message", "")
+
+        logger.info(
+            f"  Face: name={face_name}, type={face_type}, uuid={face_uuid[:8] if face_uuid else 'N/A'}, "
+            f"first_meeting={is_first}, confidence={processed_face.get('confidence', 0):.2f}"
+        )
+        if meeting_msg:
+            logger.debug(f"  Meeting: {meeting_msg}")
+
         detections.append(FaceDetection(
             bbox=bbox_orig,
-            name=processed_face.get("face_name") or "Unknown",
+            name=face_name,
             age=processed_face.get("age"),
             sex=processed_face.get("sex"),
             confidence=processed_face.get("confidence", 0.0)

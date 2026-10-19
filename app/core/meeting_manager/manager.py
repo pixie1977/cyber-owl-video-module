@@ -252,6 +252,11 @@ class MeetingManager:
                 face_data = self.storage.get_face(face_uuid, face_type)
                 face_name = face_data.get("name") if face_data else None
 
+                log.info(
+                    f"Match found: uuid={face_uuid[:8]}, type={face_type}, "
+                    f"name={face_name}, first_meeting={is_first_meeting}"
+                )
+
                 # Формируем уведомление
                 notification = self._format_notification(
                     face_uuid, face_type, is_first_meeting, face_name
@@ -279,6 +284,11 @@ class MeetingManager:
                 # Новое лицо - сохраняем
                 face_uuid = self.storage.add_unknown_face(embedding)
                 is_first_meeting = True
+
+                log.info(
+                    f"New unknown face: uuid={face_uuid[:8]}, "
+                    f"saved to storage"
+                )
 
                 # Записываем встречу
                 self._record_meeting(face_uuid)
