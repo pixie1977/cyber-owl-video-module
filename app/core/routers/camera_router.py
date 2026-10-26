@@ -127,8 +127,8 @@ def get_templates() -> Jinja2Templates:
 class FaceDetection(BaseModel):
     bbox: List[int]  # [x1, y1, x2, y2]
     name: str
-    age: int
-    sex: str
+    age: Optional[int] = None
+    sex: Optional[str] = None
     confidence: float
 
     def to_dict(self):
