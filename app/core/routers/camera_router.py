@@ -5,6 +5,7 @@
 - OpenCV + MJPEG (fallback)
 - Эндпоинт /detect — детекция лиц с возвратом JSON
 """
+import gc
 import glob
 import logging
 import os
@@ -361,12 +362,18 @@ mjpeg_buffer = {
 
 def generate_mjpeg_stream():
     """Генератор MJPEG-потока. Использует общий буфер кадра."""
+    last_frame_id = None
     while True:
         with mjpeg_buffer["lock"]:
             if mjpeg_buffer["frame"] is None:
                 time.sleep(0.1)
                 continue
             frame = mjpeg_buffer["frame"]
+            frame_id = mjpeg_buffer["timestamp"]
+            # Очищаем старый кадр сразу после получения
+            if last_frame_id is not None:
+                mjpeg_buffer["frame"] = None
+            last_frame_id = frame_id
 
         yield (
             b'--frame\r\n'
@@ -378,12 +385,17 @@ def generate_mjpeg_stream():
 
 def update_mjpeg_buffer():
     """Фоновый поток: обновляет буфер кадра для всех MJPEG клиентов."""
+    frame_count = 0
     while True:
         frame_bytes = get_frame()
         if frame_bytes is not None:
             with mjpeg_buffer["lock"]:
                 mjpeg_buffer["frame"] = frame_bytes
                 mjpeg_buffer["timestamp"] = time.time()
+        frame_count += 1
+        # Принудительная сборка мусора каждые 100 кадров
+        if frame_count % 100 == 0:
+            gc.collect()
         time.sleep(0.2)  # ~5 FPS
 
 

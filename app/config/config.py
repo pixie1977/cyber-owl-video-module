@@ -64,7 +64,7 @@ class Settings:
             "EMBEDDINGS_DIR", default=BASE_DIR / "embeddings"
         )
 
-        self.CAMERA_DETECTION_THRESHOLD: float = self._get_float("CAMERA_DETECTION_THRESHOLD", 0.5)
+        self.CAMERA_DETECTION_THRESHOLD: float = self._get_float("CAMERA_DETECTION_THRESHOLD", 0.75)
 
         self.LLM_MODULE_HOST: str = self._get_str("LLM_MODULE_HOST")
         self.LLM_MODULE_PORT: int = self._get_int("LLM_MODULE_PORT")

@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import threading
 from typing import Callable
 
@@ -49,6 +50,10 @@ class PeriodicFacesDataSender:
                     status = await client.post_json(json=faces_data)
 
                 log.info(f"Результат отправки данных: {status}")
+
+                # Очищаем память
+                del faces_data
+                gc.collect()
 
                 # Пауза с возможностью прерывания
                 for _ in range(self.interval):

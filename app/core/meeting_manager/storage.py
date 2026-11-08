@@ -3,6 +3,7 @@
 Сохраняет в JSON файл с эмбеддингами в base64.
 """
 
+import gc
 import json
 import uuid
 import base64
@@ -184,11 +185,16 @@ class FaceStorage:
         self._faiss_index.add(np.array(all_embeddings).astype('float32'))
         self._faiss_dirty = False
         log.debug(f"FAISS index rebuilt: {len(all_embeddings)} vectors")
+        # Освобождаем память от временных numpy массивов
+        del all_embeddings
+        gc.collect()
 
-    def find_similar_face(self, embedding: np.ndarray, tolerance: float = 0.55) -> Optional[tuple[str, str]]:
+    def find_similar_face(self, embedding: np.ndarray, tolerance: float = 0.75) -> Optional[tuple[str, str]]:
         """
         Поиск похожего лица в базе с кэшированным FAISS индексом.
         Возвращает (uuid, face_type) если найдено, иначе None.
+        
+        tolerance: порог сходства (0.75 = ~41 градус, достаточно для распознавания)
         """
         self._build_faiss_index()
 
@@ -202,8 +208,10 @@ class FaceStorage:
         idx = indices[0][0]
 
         if score > tolerance:
+            log.debug(f"Match found: score={score:.3f}, uuid={self._faiss_uuids[idx][:8]}, type={self._faiss_types[idx]}")
             return (self._faiss_uuids[idx], self._faiss_types[idx])
 
+        log.debug(f"No match: score={score:.3f} < tolerance={tolerance}")
         return None
 
     def _mark_dirty(self):

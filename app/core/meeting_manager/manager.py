@@ -37,7 +37,7 @@ class MeetingManager:
         self,
         storage_path: Path,
         llm_endpoint_url: str,
-        detection_threshold: float = 0.55,
+        detection_threshold: float = 0.75,  # Увеличено с 0.55 для корректного распознавания
         meeting_check_interval: int = 300  # 5 минут
     ):
         self.storage = FaceStorage(storage_path)
@@ -125,11 +125,16 @@ class MeetingManager:
         return face_uuid not in self._today_meetings
 
     def _record_meeting(self, face_uuid: str):
-        """Запись встречи в историю."""
+        """Запись встречи в историю с ограничением размера."""
         if face_uuid not in self._today_meetings:
             self._today_meetings[face_uuid] = []
 
         self._today_meetings[face_uuid].append(datetime.now())
+
+        # Ограничиваем историю: максимум 50 записей на лицо
+        if len(self._today_meetings[face_uuid]) > 50:
+            self._today_meetings[face_uuid] = self._today_meetings[face_uuid][-50:]
+
         self._save_today_meetings()
 
     def _format_notification(self, face_uuid: str, face_type: str, is_first_meeting: bool,
