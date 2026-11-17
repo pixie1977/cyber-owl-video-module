@@ -9,6 +9,7 @@ import gc
 import glob
 import logging
 import os
+import re
 import threading
 import time
 from datetime import datetime
@@ -561,7 +562,8 @@ async def register_face(request: RegisterFaceRequest):
     Ожидает, что на кадре ровно одно лицо.
     Делает 5 снимков, сохраняет эмбеддинги как {username}-{idx}.npy
     """
-    import re
+
+    logger.info("register_face step 1")
 
     # Валидация username
     if not re.match(r'^[a-z][a-z0-9_]{1,29}$', request.username):
@@ -571,6 +573,7 @@ async def register_face(request: RegisterFaceRequest):
         )
 
     username = request.username
+    logger.info("register_face step 2 username="+username)
 
     # Инициализация отдельной камеры для регистрации
     init_camera(register=True)
@@ -580,12 +583,16 @@ async def register_face(request: RegisterFaceRequest):
             detail="Camera not available"
         )
 
+    logger.info("register_face step 3")
+
     # Проверяем face_app (быстро, без блокировки)
     if face_app is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Face analysis model not initialized"
         )
+
+    logger.info("register_face step 4")
 
     # face_app не thread-safe — блокируем на время детекции
     with face_lock:
@@ -603,6 +610,7 @@ async def register_face(request: RegisterFaceRequest):
 
             rgb_frame = cv2.cvtColor(cv2.resize(frame, (640, 480)), cv2.COLOR_BGR2RGB)
             faces = face_app.get(rgb_frame)
+            logger.info("register_face step 5+")
 
             if len(faces) == 1:
                 embedding = faces[0].normed_embedding
@@ -614,16 +622,21 @@ async def register_face(request: RegisterFaceRequest):
 
             attempts += 1
 
+    logger.info("register_face step 6")
+
     if len(embeddings) < required_faces:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Could not capture enough single-face frames. Got {len(embeddings)}, needed {required_faces}"
         )
 
+    logger.info("register_face step 7")
     # Сохранение эмбеддингов
     saved_files = []
     embeddings_dir = settings.EMBEDDINGS_DIR
     os.makedirs(embeddings_dir, exist_ok=True)
+
+    logger.info("register_face step 8")
 
     for idx, emb in enumerate(embeddings, start=1):
         filename = f"{username}-{idx}.npy"
@@ -631,8 +644,12 @@ async def register_face(request: RegisterFaceRequest):
         np.save(filepath, emb)
         saved_files.append(filename)
 
+    logger.info("register_face step 9")
+
     # Перезагрузка базы эмбеддингов
     update_embeddings()
+
+    logger.info("register_face step 10")
 
     logger.info(f"Successfully registered user '{username}' with {len(saved_files)} embeddings")
 
