@@ -168,17 +168,19 @@ def init_camera(register: bool = False) -> None:
         if cap is not None and cap.isOpened():
             return
     
-    # Создаём новую камеру
-    new_cap = cv2.VideoCapture(0)
+    # Используем DirectShow (CAP_DSHOW) вместо MSMF — стабильнее на Windows
+    backend = cv2.CAP_DSHOW
+    
+    new_cap = cv2.VideoCapture(0, backend)
     new_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     new_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     new_cap.set(cv2.CAP_PROP_FPS, 15)
     
     if not new_cap.isOpened():
-        logger.error("Failed to open camera via OpenCV")
+        logger.error("Failed to open camera via OpenCV (DirectShow)")
         return
     
-    logger.info("OpenCV camera initialized")
+    logger.info("OpenCV camera initialized (DirectShow)")
     
     # Сохраняем в нужную глобальную переменную
     if register:
