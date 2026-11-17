@@ -563,7 +563,7 @@ async def register_face(request: RegisterFaceRequest):
     Делает 5 снимков, сохраняет эмбеддинги как {username}-{idx}.npy
     """
 
-    logger.info("register_face step 1")
+    logger.info("register_face step 1 request="+str(request)+"")
 
     # Валидация username
     if not re.match(r'^[a-z][a-z0-9_]{1,29}$', request.username):
