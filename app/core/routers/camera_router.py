@@ -567,11 +567,11 @@ async def register_face(request: RegisterFaceRequest):
     logger.info("register_face step 1 username="+username+"")
 
     # Валидация username
-    if not re.match(r'^[a-z][a-z0-9_]{1,29}$', username):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username must be 1-30 chars: lowercase letters, digits, underscores"
-        )
+    # if not re.match(r'^[a-z][a-z0-9_]{1,29}$', username):
+    #     raise HTTPException(
+    #         status_code=status.HTTP_400_BAD_REQUEST,
+    #         detail="Username must be 1-30 chars: lowercase letters, digits, underscores"
+    #     )
 
     # Инициализация отдельной камеры для регистрации
     init_camera(register=True)
