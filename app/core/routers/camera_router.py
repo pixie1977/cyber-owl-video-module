@@ -563,17 +563,15 @@ async def register_face(request: RegisterFaceRequest):
     Делает 5 снимков, сохраняет эмбеддинги как {username}-{idx}.npy
     """
 
-    logger.info("register_face step 1 request="+str(request)+"")
+    username = request.username
+    logger.info("register_face step 1 username="+username+"")
 
     # Валидация username
-    if not re.match(r'^[a-z][a-z0-9_]{1,29}$', request.username):
+    if not re.match(r'^[a-z][a-z0-9_]{1,29}$', username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username must be 1-30 chars: lowercase letters, digits, underscores"
         )
-
-    username = request.username
-    logger.info("register_face step 2 username="+username)
 
     # Инициализация отдельной камеры для регистрации
     init_camera(register=True)
