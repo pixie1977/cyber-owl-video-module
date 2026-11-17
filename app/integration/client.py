@@ -8,6 +8,10 @@ import aiohttp
 from typing import Optional
 
 
+# Таймаут для HTTP-запросов (секунды)
+HTTP_TIMEOUT = 5
+
+
 class PostClient:
     """
     Асинхронный post-клиент для работы с API.
@@ -26,7 +30,8 @@ class PostClient:
         """
         Контекстный менеджер: открывает сессию.
         """
-        self.session = aiohttp.ClientSession()
+        timeout = aiohttp.ClientTimeout(total=HTTP_TIMEOUT)
+        self.session = aiohttp.ClientSession(timeout=timeout)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
