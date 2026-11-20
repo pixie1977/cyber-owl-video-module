@@ -672,6 +672,8 @@ async def register_face(request: RegisterFaceRequest):
 
     logger.info(f"Successfully registered user '{username}' with {len(saved_files)} embeddings")
 
+    update_embeddings()
+
     return {
         "success": True,
         "message": f"User '{username}' registered successfully",
