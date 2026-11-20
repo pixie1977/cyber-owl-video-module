@@ -574,17 +574,19 @@ async def register_face(request: RegisterFaceRequest):
     #     )
 
     # Инициализация отдельной камеры для регистрации
-    init_camera(register=True)
-    if cap_register is None or not cap_register.isOpened():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Camera not available"
-        )
+    # init_camera(register=True)
+    # if cap_register is None or not cap_register.isOpened():
+    #     logger.info("register_face step 2 abort")
+    #     raise HTTPException(
+    #         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+    #         detail="Camera not available"
+    #     )
 
     logger.info("register_face step 3")
 
     # Проверяем face_app (быстро, без блокировки)
     if face_app is None:
+        logger.info("register_face step 3 abort")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Face analysis model not initialized"
@@ -600,13 +602,12 @@ async def register_face(request: RegisterFaceRequest):
         required_faces = 5
 
         while len(embeddings) < required_faces and attempts < max_attempts:
-            ret, frame = cap_register.read()
-            if not ret or frame is None:
+            rgb_frame = get_frame()
+            if rgb_frame is None:
                 attempts += 1
                 time.sleep(0.2)
                 continue
 
-            rgb_frame = cv2.cvtColor(cv2.resize(frame, (640, 480)), cv2.COLOR_BGR2RGB)
             faces = face_app.get(rgb_frame)
             logger.info("register_face step 5+")
 
