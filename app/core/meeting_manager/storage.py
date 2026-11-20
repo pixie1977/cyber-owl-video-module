@@ -4,13 +4,15 @@
 """
 
 import gc
+import glob
 import json
+import os
 import uuid
 import base64
 import numpy as np
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from app.core.logger import get_logger
 
 log = get_logger(__name__)
@@ -217,3 +219,166 @@ class FaceStorage:
     def _mark_dirty(self):
         """Помечает индекс как устаревший."""
         self._faiss_dirty = True
+
+    def sync_known_faces_from_npy(self, embeddings_dir: str) -> List[str]:
+        """
+        Синхронизация known-лиц из .npy файлов в FaceStorage.
+        Загружает все файлы вида {name}-{idx}.npy и добавляет как known-лица.
+        
+        Возвращает список добавленных имён.
+        """
+        import faiss
+        
+        added_names = []
+        
+        # Собираем эмбеддинги из .npy файлов
+        npy_files = sorted(glob.glob(os.path.join(embeddings_dir, "*.npy")))
+        
+        for filepath in npy_files:
+            filename = os.path.basename(filepath)
+            # Парсим имя: {username}-{idx}.npy
+            name = filename.replace(".npy", "")
+            
+            # Проверяем, что это known-лицо (имеет формат name-idx.npy)
+            parts = name.rsplit("-", 1)
+            if len(parts) != 2:
+                continue
+            
+            username, idx_str = parts
+            
+            # Проверяем, что idx — число
+            if not idx_str.isdigit():
+                continue
+            
+            # Проверяем, есть ли уже это лицо в known_faces
+            # Ищем по имени
+            known_by_name = {
+                uuid_: data for uuid_, data in self.known_faces.items()
+                if data.get("name") == username
+            }
+            
+            if known_by_name:
+                # Лицо уже есть — обновляем эмбеддинг (среднее)
+                existing_uuid = next(iter(known_by_name))
+                existing_emb = self._base64_to_embedding(self.known_faces[existing_uuid]["embedding"])
+                new_emb = np.load(filepath)
+                avg_emb = (existing_emb + new_emb) / 2.0
+                self.known_faces[existing_uuid]["embedding"] = self._embedding_to_base64(avg_emb)
+                log.debug(f"Updated existing known face '{username}' (UUID {existing_uuid[:8]})")
+            else:
+                # Добавляем новое known-лицо
+                face_uuid = str(uuid.uuid4())
+                embedding = np.load(filepath)
+                self.known_faces[face_uuid] = {
+                    "uuid": face_uuid,
+                    "name": username,
+                    "embedding": self._embedding_to_base64(embedding),
+                    "created_at": datetime.now().isoformat(),
+                    "last_seen": None,
+                    "meetings_count": 0
+                }
+                added_names.append(username)
+                log.info(f"Added known face '{username}' from {filename}")
+        
+        if added_names:
+            self._save()
+        self._mark_dirty()
+        return added_names
+
+    def remove_similar_unknown_faces(self, query_embedding: np.ndarray, 
+                                      similarity_threshold: float = 0.85,
+                                      max_count: int = 3) -> List[str]:
+        """
+        Удаляет unknown-лица, похожие на query_embedding.
+        
+        :param query_embedding: эмбеддинг known-лица
+        :param similarity_threshold: порог сходства для удаления (cosine similarity)
+        :param max_count: максимальное количество удаляемых лиц
+        :return: список удалённых UUID
+        """
+        import faiss
+        
+        if not self.unknown_faces:
+            return []
+        
+        # Собираем все unknown-эмбеддинги
+        unknown_embs = []
+        unknown_uuids = []
+        
+        for uuid_, data in self.unknown_faces.items():
+            emb = self._base64_to_embedding(data["embedding"])
+            unknown_embs.append(emb)
+            unknown_uuids.append(uuid_)
+        
+        if not unknown_embs:
+            return []
+        
+        # Строим временный FAISS-индекс для unknown-лиц
+        dim = unknown_embs[0].shape[0]
+        temp_index = faiss.IndexFlatIP(dim)
+        temp_index.add(np.array(unknown_embs).astype('float32'))
+        
+        # Ищем похожие
+        query_emb = query_embedding.reshape(1, -1).astype('float32')
+        distances, indices = temp_index.search(query_emb, k=min(max_count + 1, len(unknown_embs)))
+        
+        removed_uuids = []
+        for i in range(len(indices[0])):
+            score = distances[0][i]
+            idx = indices[0][i]
+            
+            if score > similarity_threshold:
+                uuid_to_remove = unknown_uuids[idx]
+                del self.unknown_faces[uuid_to_remove]
+                removed_uuids.append(uuid_to_remove)
+                log.info(f"Removed duplicate unknown face (UUID {uuid_to_remove[:8]}) "
+                        f"similar to known face (score={score:.3f})")
+        
+        if removed_uuids:
+            self._save()
+        self._mark_dirty()
+        return removed_uuids
+
+    def find_and_remove_similar_unknown(self, query_embedding: np.ndarray,
+                                         similarity_threshold: float = 0.85) -> Optional[str]:
+        """
+        Находит и удаляет наиболее похожее unknown-лицо.
+        Возвращает UUID удалённого лица или None.
+        """
+        if not self.unknown_faces:
+            return None
+        
+        # Собираем unknown-эмбеддинги
+        unknown_embs = []
+        unknown_uuids = []
+        
+        for uuid_, data in self.unknown_faces.items():
+            emb = self._base64_to_embedding(data["embedding"])
+            unknown_embs.append(emb)
+            unknown_uuids.append(uuid_)
+        
+        if not unknown_embs:
+            return None
+        
+        # Строим временный FAISS-индекс
+        dim = unknown_embs[0].shape[0]
+        temp_index = faiss.IndexFlatIP(dim)
+        temp_index.add(np.array(unknown_embs).astype('float32'))
+        
+        # Ищем наиболее похожее
+        query_emb = query_embedding.reshape(1, -1).astype('float32')
+        distances, indices = temp_index.search(query_emb, k=1)
+        
+        score = distances[0][0]
+        idx = indices[0][0]
+        
+        if score > similarity_threshold:
+            uuid_to_remove = unknown_uuids[idx]
+            del self.unknown_faces[uuid_to_remove]
+            log.info(f"Removed similar unknown face (UUID {uuid_to_remove[:8]}) "
+                    f"(score={score:.3f})")
+            self._save()
+            self._mark_dirty()
+            return uuid_to_remove
+        
+        return None

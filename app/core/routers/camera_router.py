@@ -670,6 +670,25 @@ async def register_face(request: RegisterFaceRequest):
 
     logger.info("register_face step 10")
 
+    # Синхронизация с FaceStorage — добавляем known-лицо в storage.json
+    try:
+        added = meeting_manager.storage.sync_known_faces_from_npy(str(settings.EMBEDDINGS_DIR))
+        logger.info(f"Synced {len(added)} known faces to FaceStorage: {added}")
+    except Exception as e:
+        logger.error(f"Failed to sync to FaceStorage: {e}")
+
+    # Удаляем похожие unknown-лица из storage.json
+    try:
+        # Берём средний эмбеддинг для сравнения
+        avg_embedding = np.mean(embeddings, axis=0)
+        removed = meeting_manager.storage.remove_similar_unknown_faces(
+            avg_embedding, similarity_threshold=0.85, max_count=3
+        )
+        if removed:
+            logger.info(f"Removed {len(removed)} duplicate unknown faces")
+    except Exception as e:
+        logger.error(f"Failed to remove similar unknown faces: {e}")
+
     logger.info(f"Successfully registered user '{username}' with {len(saved_files)} embeddings")
 
     update_embeddings()
@@ -679,6 +698,49 @@ async def register_face(request: RegisterFaceRequest):
         "message": f"User '{username}' registered successfully",
         "embeddings_saved": saved_files,
         "count": len(saved_files)
+    }
+
+
+@router.post("/cleanup-unknown-faces")
+async def cleanup_unknown_faces():
+    """
+    Очистка unknown-лиц, похожих на known-лица.
+    Проверяет каждое known-лицо и удаляет похожие unknown-лица.
+    """
+    removed_count = 0
+    
+    for uuid_, known_data in meeting_manager.storage.known_faces.items():
+        known_emb = meeting_manager.storage._base64_to_embedding(known_data["embedding"])
+        removed = meeting_manager.storage.remove_similar_unknown_faces(
+            known_emb, similarity_threshold=0.85, max_count=3
+        )
+        removed_count += len(removed)
+    
+    logger.info(f"Cleanup complete: removed {removed_count} duplicate unknown faces")
+    
+    return {
+        "success": True,
+        "message": f"Removed {removed_count} duplicate unknown faces",
+        "removed_count": removed_count
+    }
+
+
+@router.post("/clear-all-unknown-faces")
+async def clear_all_unknown_faces():
+    """
+    Полная очистка всех unknown-лиц из хранилища.
+    """
+    count = len(meeting_manager.storage.unknown_faces)
+    meeting_manager.storage.unknown_faces.clear()
+    meeting_manager.storage._save()
+    meeting_manager.storage._mark_dirty()
+    
+    logger.info(f"Cleared all {count} unknown faces from storage")
+    
+    return {
+        "success": True,
+        "message": f"Cleared all {count} unknown faces",
+        "count": count
     }
 
 
