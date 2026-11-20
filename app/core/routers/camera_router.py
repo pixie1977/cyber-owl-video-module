@@ -602,14 +602,34 @@ async def register_face(request: RegisterFaceRequest):
         required_faces = 5
 
         while len(embeddings) < required_faces and attempts < max_attempts:
-            rgb_frame = get_frame()
-            if rgb_frame is None:
+            frame_bytes = get_frame()
+            if frame_bytes is None:
                 attempts += 1
                 time.sleep(0.2)
                 continue
 
-            faces = face_app.get(rgb_frame)
+            # Декодируем JPEG-байты обратно в numpy array
+            arr = np.frombuffer(frame_bytes, np.uint8)
+            frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if frame is None:
+                logger.warning("register_face: failed to decode frame from JPEG bytes")
+                attempts += 1
+                continue
+
+            rgb_frame = cv2.cvtColor(cv2.resize(frame, (640, 480)), cv2.COLOR_BGR2RGB)
+            try:
+                faces = face_app.get(rgb_frame)
+            except Exception as e:
+                logger.error(f"register_face: face_app.get() failed: {e}")
+                attempts += 1
+                continue
+
             logger.info("register_face step 5+")
+
+            if faces is None or len(faces) == 0:
+                logger.debug("register_face: no faces detected in frame")
+                attempts += 1
+                continue
 
             if len(faces) == 1:
                 embedding = faces[0].normed_embedding
