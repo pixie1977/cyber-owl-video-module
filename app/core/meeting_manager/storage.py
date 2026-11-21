@@ -232,10 +232,10 @@ class FaceStorage:
             known_index.add(np.array(known_embs).astype('float32'))
             
             query_emb = embedding.reshape(1, -1).astype('float32')
-            distances, indices = known_index.search(query_emb, k=min(3, len(known_embs)))
+            distances, indices = known_index.search(query_emb, k=len(known_embs))
             
             best_known = None
-            known_threshold = 0.65
+            known_threshold = 0.55
             
             for i in range(len(indices[0])):
                 score = distances[0][i]
