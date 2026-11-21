@@ -209,38 +209,53 @@ class FaceStorage:
         Приоритизирует known-лица над unknown.
         
         Алгоритм:
-        1. Сначала ищем known-лица с мягким порогом (0.65)
+        1. Сначала ищем known-лица СРЕДИ ВСЕХ known-лиц с мягким порогом (0.65)
         2. Если не нашли — ищем среди всех с основным порогом (0.75)
         3. Приоритет: known-лица всегда выше unknown
         
         Возвращает (uuid, face_type) если найдено, иначе None.
         """
-        self._build_faiss_index()
+        import faiss
+        
+        # Фаза 1: ищем known-лица СРЕДИ ВСЕХ known-лиц
+        if self.known_faces:
+            known_embs = []
+            known_uuids = []
+            
+            for uuid_, data in self.known_faces.items():
+                emb = self._base64_to_embedding(data["embedding"])
+                known_embs.append(emb)
+                known_uuids.append(uuid_)
+            
+            dim = known_embs[0].shape[0]
+            known_index = faiss.IndexFlatIP(dim)
+            known_index.add(np.array(known_embs).astype('float32'))
+            
+            query_emb = embedding.reshape(1, -1).astype('float32')
+            distances, indices = known_index.search(query_emb, k=min(3, len(known_embs)))
+            
+            best_known = None
+            known_threshold = 0.65
+            
+            for i in range(len(indices[0])):
+                score = distances[0][i]
+                if score > known_threshold:
+                    if best_known is None or score > best_known[0]:
+                        best_known = (score, known_uuids[indices[0][i]])
+            
+            if best_known:
+                log.debug(f"Match found (known): score={best_known[0]:.3f}, uuid={best_known[1][:8]}")
+                return (best_known[1], "known")
 
+        # Фаза 2: ищем среди всех с основным порогом
+        self._build_faiss_index()
+        
         if self._faiss_index is None:
             return None
 
         query_emb = embedding.reshape(1, -1).astype('float32')
-        # Ищем top-10 для полного покрытия
-        distances, indices = self._faiss_index.search(query_emb, k=min(10, len(self._faiss_uuids)))
+        distances, indices = self._faiss_index.search(query_emb, k=min(5, len(self._faiss_uuids)))
 
-        # Фаза 1: ищем known-лица с мягким порогом
-        best_known = None
-        known_threshold = 0.65
-        
-        for i in range(len(indices[0])):
-            score = distances[0][i]
-            idx = indices[0][i]
-            
-            if self._faiss_types[idx] == "known" and score > known_threshold:
-                if best_known is None or score > best_known[0]:
-                    best_known = (score, self._faiss_uuids[idx])
-        
-        if best_known:
-            log.debug(f"Match found (known): score={best_known[0]:.3f}, uuid={best_known[1][:8]}")
-            return (best_known[1], "known")
-
-        # Фаза 2: ищем среди всех с основным порогом
         best_known = None
         best_unknown = None
 
