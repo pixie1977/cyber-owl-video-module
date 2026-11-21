@@ -257,23 +257,26 @@ class FaceStorage:
     def sync_known_faces_from_npy(self, embeddings_dir: str) -> List[str]:
         """
         Синхронизация known-лиц из .npy файлов в FaceStorage.
-        Загружает все файлы вида {name}-{idx}.npy и добавляет как known-лица.
+        Группирует файлы вида {name}-{idx}.npy по имени, усредняет эмбеддинги.
         
-        Возвращает список добавленных имён.
+        Например: "мастер-1.npy", "мастер-2.npy" → known-лицо "мастер".
+        
+        Возвращает список добавленных/обновлённых имён.
         """
-        import faiss
-        
         added_names = []
         
         # Собираем эмбеддинги из .npy файлов
         npy_files = sorted(glob.glob(os.path.join(embeddings_dir, "*.npy")))
         
+        # Группируем по имени: {"мастер": [emb1, emb2, ...]}
+        name_embeddings: Dict[str, List[np.ndarray]] = {}
+        
         for filepath in npy_files:
             filename = os.path.basename(filepath)
-            # Парсим имя: {username}-{idx}.npy
+            # Парсим имя: {name}-{idx}.npy
             name = filename.replace(".npy", "")
             
-            # Проверяем, что это known-лицо (имеет формат name-idx.npy)
+            # Проверяем формат name-idx.npy
             parts = name.rsplit("-", 1)
             if len(parts) != 2:
                 continue
@@ -284,35 +287,40 @@ class FaceStorage:
             if not idx_str.isdigit():
                 continue
             
+            # Группируем по имени без idx: "мастер-1" -> "мастер"
+            if username not in name_embeddings:
+                name_embeddings[username] = []
+            name_embeddings[username].append(np.load(filepath))
+        
+        # Для каждой группы усредняем эмбеддинги и добавляем/обновляем known-лицо
+        for username, embeddings in name_embeddings.items():
+            # Усредняем все эмбеддинги для этого лица
+            avg_embedding = np.mean(embeddings, axis=0)
+            
             # Проверяем, есть ли уже это лицо в known_faces
-            # Ищем по имени
             known_by_name = {
                 uuid_: data for uuid_, data in self.known_faces.items()
                 if data.get("name") == username
             }
             
             if known_by_name:
-                # Лицо уже есть — обновляем эмбеддинг (среднее)
+                # Лицо уже есть — обновляем эмбеддинг
                 existing_uuid = next(iter(known_by_name))
-                existing_emb = self._base64_to_embedding(self.known_faces[existing_uuid]["embedding"])
-                new_emb = np.load(filepath)
-                avg_emb = (existing_emb + new_emb) / 2.0
-                self.known_faces[existing_uuid]["embedding"] = self._embedding_to_base64(avg_emb)
-                log.debug(f"Updated existing known face '{username}' (UUID {existing_uuid[:8]})")
+                self.known_faces[existing_uuid]["embedding"] = self._embedding_to_base64(avg_embedding)
+                log.debug(f"Updated known face '{username}' (UUID {existing_uuid[:8]})")
             else:
                 # Добавляем новое known-лицо
                 face_uuid = str(uuid.uuid4())
-                embedding = np.load(filepath)
                 self.known_faces[face_uuid] = {
                     "uuid": face_uuid,
                     "name": username,
-                    "embedding": self._embedding_to_base64(embedding),
+                    "embedding": self._embedding_to_base64(avg_embedding),
                     "created_at": datetime.now().isoformat(),
                     "last_seen": None,
                     "meetings_count": 0
                 }
                 added_names.append(username)
-                log.info(f"Added known face '{username}' from {filename}")
+                log.info(f"Added known face '{username}' from {len(embeddings)} embeddings")
         
         if added_names:
             self._save()
