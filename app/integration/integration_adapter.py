@@ -42,14 +42,16 @@ class PeriodicFacesDataSender:
 
                 faces_data = [face.to_dict() for face in faces]
 
-                log.info(f"Отправляем данные: {faces_data}")
+                if len(faces_data)>0:
+                    log.info(f"Отправляем данные: {faces_data}")
 
                 status = None
                 # Отправляем данные
                 async with PostClient(self.url) as client:
                     status = await client.post_json(json=faces_data)
 
-                log.info(f"Результат отправки данных: {status}")
+                if len(faces_data) > 0:
+                    log.info(f"Результат отправки данных: {status}")
 
                 # Очищаем память
                 del faces_data
