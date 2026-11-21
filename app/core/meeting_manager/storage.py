@@ -43,6 +43,10 @@ class FaceStorage:
             except Exception as e:
                 log.error(f"Failed to sync known faces from npy: {e}")
 
+    @property
+    def __class__(self):
+        return super().__class__
+
     def _load(self):
         """Загрузка данных из JSON файла."""
         if not self.storage_path.exists():
