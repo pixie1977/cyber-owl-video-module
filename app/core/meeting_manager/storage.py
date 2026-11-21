@@ -280,14 +280,14 @@ class FaceStorage:
         
         # Приоритет: known-лица всегда выше unknown
         if best_known:
-            log.debug(f"Match found (known): score={best_known[0]:.3f}, uuid={best_known[1][:8]}")
+            log.info(f"Match found (known): score={best_known[0]:.3f}, uuid={best_known[1][:8]}")
             return (best_known[1], "known")
         
         if best_unknown:
-            log.debug(f"Match found (unknown): score={best_unknown[0]:.3f}, uuid={best_unknown[1][:8]}")
+            log.info(f"Match found (unknown): score={best_unknown[0]:.3f}, uuid={best_unknown[1][:8]}")
             return (best_unknown[1], "unknown")
 
-        log.debug(f"No match: best known={best_known}, best unknown={best_unknown}")
+        log.info(f"No match: best known={best_known}, best unknown={best_unknown}")
         return None
 
     def _mark_dirty(self):
