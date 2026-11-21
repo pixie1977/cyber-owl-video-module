@@ -21,8 +21,9 @@ log = get_logger(__name__)
 class FaceStorage:
     """Хранение известных и неизвестных лиц с эмбеддингами."""
 
-    def __init__(self, storage_path: Path):
+    def __init__(self, storage_path: Path, embeddings_dir: Optional[Path] = None):
         self.storage_path = storage_path
+        self.embeddings_dir = embeddings_dir
         self.known_faces: Dict[str, Dict[str, Any]] = {}
         self.unknown_faces: Dict[str, Dict[str, Any]] = {}
         self._faiss_index = None
@@ -30,6 +31,17 @@ class FaceStorage:
         self._faiss_types = []
         self._faiss_dirty = True
         self._load()
+        
+        # Синхронизируем known-лица из .npy файлов
+        if self.embeddings_dir:
+            try:
+                added = self.sync_known_faces_from_npy(str(self.embeddings_dir))
+                if added:
+                    log.info(f"Synced {len(added)} known faces from npy: {added}")
+                else:
+                    log.info("No new known faces to sync from npy")
+            except Exception as e:
+                log.error(f"Failed to sync known faces from npy: {e}")
 
     def _load(self):
         """Загрузка данных из JSON файла."""
@@ -194,6 +206,7 @@ class FaceStorage:
     def find_similar_face(self, embedding: np.ndarray, tolerance: float = 0.75) -> Optional[tuple[str, str]]:
         """
         Поиск похожего лица в базе с кэшированным FAISS индексом.
+        Приоритизирует known-лица над unknown.
         Возвращает (uuid, face_type) если найдено, иначе None.
         
         tolerance: порог сходства (0.75 = ~41 градус, достаточно для распознавания)
@@ -204,16 +217,37 @@ class FaceStorage:
             return None
 
         query_emb = embedding.reshape(1, -1).astype('float32')
-        distances, indices = self._faiss_index.search(query_emb, k=1)
+        # Ищем top-5, чтобы выбрать лучшее known-лицо
+        distances, indices = self._faiss_index.search(query_emb, k=min(5, len(self._faiss_uuids)))
 
-        score = distances[0][0]
-        idx = indices[0][0]
+        best_known = None
+        best_unknown = None
 
-        if score > tolerance:
-            log.debug(f"Match found: score={score:.3f}, uuid={self._faiss_uuids[idx][:8]}, type={self._faiss_types[idx]}")
-            return (self._faiss_uuids[idx], self._faiss_types[idx])
+        for i in range(len(indices[0])):
+            score = distances[0][i]
+            idx = indices[0][i]
+            
+            if score <= tolerance:
+                continue
+            
+            face_type = self._faiss_types[idx]
+            face_uuid = self._faiss_uuids[idx]
+            
+            if face_type == "known" and (best_known is None or score > best_known[0]):
+                best_known = (score, face_uuid)
+            elif face_type == "unknown" and (best_unknown is None or score > best_unknown[0]):
+                best_unknown = (score, face_uuid)
+        
+        # Приоритет: known-лица всегда выше unknown
+        if best_known:
+            log.debug(f"Match found (known): score={best_known[0]:.3f}, uuid={best_known[1][:8]}")
+            return (best_known[1], "known")
+        
+        if best_unknown:
+            log.debug(f"Match found (unknown): score={best_unknown[0]:.3f}, uuid={best_unknown[1][:8]}")
+            return (best_unknown[1], "unknown")
 
-        log.debug(f"No match: score={score:.3f} < tolerance={tolerance}")
+        log.debug(f"No match: best known={best_known}, best unknown={best_unknown}")
         return None
 
     def _mark_dirty(self):

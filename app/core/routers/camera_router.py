@@ -753,7 +753,8 @@ MEETING_STORAGE_PATH = settings.EMBEDDINGS_DIR.parent / "meeting_storage.json"
 meeting_manager = MeetingManager(
     storage_path=MEETING_STORAGE_PATH,
     llm_endpoint_url=LLM_ENDPOINT_URL,
-    detection_threshold=settings.CAMERA_DETECTION_THRESHOLD
+    detection_threshold=settings.CAMERA_DETECTION_THRESHOLD,
+    embeddings_dir=settings.EMBEDDINGS_DIR
 )
 meeting_manager.start()
 logger.info("MeetingManager initialized")

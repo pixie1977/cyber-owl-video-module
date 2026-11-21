@@ -38,9 +38,10 @@ class MeetingManager:
         storage_path: Path,
         llm_endpoint_url: str,
         detection_threshold: float = 0.75,  # Увеличено с 0.55 для корректного распознавания
-        meeting_check_interval: int = 300  # 5 минут
+        meeting_check_interval: int = 300,  # 5 минут
+        embeddings_dir: Optional[Path] = None
     ):
-        self.storage = FaceStorage(storage_path)
+        self.storage = FaceStorage(storage_path, embeddings_dir=embeddings_dir)
         self.llm_url = llm_endpoint_url
         self.detection_threshold = detection_threshold
         self.meeting_check_interval = meeting_check_interval
