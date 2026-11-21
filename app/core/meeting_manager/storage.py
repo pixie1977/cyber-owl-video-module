@@ -207,9 +207,13 @@ class FaceStorage:
         """
         Поиск похожего лица в базе с кэшированным FAISS индексом.
         Приоритизирует known-лица над unknown.
-        Возвращает (uuid, face_type) если найдено, иначе None.
         
-        tolerance: порог сходства (0.75 = ~41 градус, достаточно для распознавания)
+        Алгоритм:
+        1. Сначала ищем known-лица с мягким порогом (0.65)
+        2. Если не нашли — ищем среди всех с основным порогом (0.75)
+        3. Приоритет: known-лица всегда выше unknown
+        
+        Возвращает (uuid, face_type) если найдено, иначе None.
         """
         self._build_faiss_index()
 
@@ -217,9 +221,26 @@ class FaceStorage:
             return None
 
         query_emb = embedding.reshape(1, -1).astype('float32')
-        # Ищем top-5, чтобы выбрать лучшее known-лицо
-        distances, indices = self._faiss_index.search(query_emb, k=min(5, len(self._faiss_uuids)))
+        # Ищем top-10 для полного покрытия
+        distances, indices = self._faiss_index.search(query_emb, k=min(10, len(self._faiss_uuids)))
 
+        # Фаза 1: ищем known-лица с мягким порогом
+        best_known = None
+        known_threshold = 0.65
+        
+        for i in range(len(indices[0])):
+            score = distances[0][i]
+            idx = indices[0][i]
+            
+            if self._faiss_types[idx] == "known" and score > known_threshold:
+                if best_known is None or score > best_known[0]:
+                    best_known = (score, self._faiss_uuids[idx])
+        
+        if best_known:
+            log.debug(f"Match found (known): score={best_known[0]:.3f}, uuid={best_known[1][:8]}")
+            return (best_known[1], "known")
+
+        # Фаза 2: ищем среди всех с основным порогом
         best_known = None
         best_unknown = None
 
